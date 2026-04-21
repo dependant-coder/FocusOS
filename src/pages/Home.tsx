@@ -49,7 +49,6 @@ export default function Home() {
 
   // Stats
   const completedTodos = todos.filter(t => t.done)
-  const progressPercent = todos.length === 0 ? 0 : Math.round((completedTodos.length / todos.length) * 100)
   const habitsDone = completedTodos.filter(t => t.type === 'habit').length
 
   const greeting = `Good morning, ${profile?.name?.split(' ')[0] || 'there'}`
