@@ -182,11 +182,13 @@ export default function Vault() {
         onClose={() => setIsFormOpen(false)}
         title="New Task"
       >
-        <TaskForm
-          onSubmit={handleCreateTask}
-          onCancel={() => setIsFormOpen(false)}
-          isSubmitting={createTask.isPending}
-        />
+        <div className="px-5 pb-5 pt-2">
+          <TaskForm
+            onSubmit={handleCreateTask}
+            onCancel={() => setIsFormOpen(false)}
+            isSubmitting={createTask.isPending}
+          />
+        </div>
       </BottomSheet>
 
       {/* Edit form */}
@@ -196,7 +198,7 @@ export default function Vault() {
         title="Edit Task"
       >
         {editingTask && (
-          <div>
+          <div className="px-5 pb-5 pt-2">
             <TaskForm
               initialData={editingTask}
               onSubmit={handleUpdateTask}
