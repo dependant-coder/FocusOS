@@ -99,3 +99,27 @@ export function useCreateAdhocTodo() {
     },
   })
 }
+
+/** Delete a daily todo */
+export function useDeleteDailyTodo() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('daily_todos')
+        .delete()
+        .eq('id', id)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      // don't really need a toast for delete, typical UX relies on visual removal
+    },
+    onError: () => {
+      toast.error('Failed to delete')
+    },
+  })
+}

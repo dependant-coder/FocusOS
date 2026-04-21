@@ -1,9 +1,13 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+// @ts-ignore
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
-Deno.serve(async (req) => {
+// @ts-ignore
+Deno.serve(async (req: any) => {
   const supabase = createClient(
+    // @ts-ignore
     Deno.env.get('SUPABASE_URL')!,
+    // @ts-ignore
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!   // bypasses RLS — runs for all users
   )
 

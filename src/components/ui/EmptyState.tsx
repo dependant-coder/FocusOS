@@ -1,29 +1,67 @@
-import { type LucideIcon } from 'lucide-react'
+import { motion } from 'framer-motion'
 
-interface EmptyStateProps {
-  icon: LucideIcon
-  title: string
-  description: string
-  actionLabel?: string
-  onAction?: () => void
+const configs = {
+  vault: {
+    emoji: '📋',
+    title: 'No tasks yet',
+    body: 'Start by adding something you need to get done.',
+    cta: 'Add your first task',
+  },
+  daily: {
+    emoji: '☀️',
+    title: "You're free today",
+    body: 'No tasks pinned or due. Enjoy it — or add something.',
+    cta: 'Add a task',
+  },
+  habits: {
+    emoji: '🌱',
+    title: 'No habits yet',
+    body: "Small daily actions compound into big results. Start one.",
+    cta: 'Add a habit',
+  },
+  weekly: {
+    emoji: '📆',
+    title: 'Nothing to review',
+    body: "Complete some tasks this week and come back Sunday.",
+    cta: null,
+  },
 }
 
-export default function EmptyState({ icon: Icon, title, description, actionLabel, onAction }: EmptyStateProps) {
+export function EmptyState({
+  variant,
+  onAction,
+}: {
+  variant: keyof typeof configs
+  onAction?: () => void
+}) {
+  const c = configs[variant]
+
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-      <div className="w-20 h-20 rounded-3xl bg-gray-50 dark:bg-gray-800/50 flex items-center justify-center mb-4">
-        <Icon size={40} className="text-gray-400 dark:text-gray-500" strokeWidth={1.5} />
-      </div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">{title}</h3>
-      <p className="text-sm text-gray-500 dark:text-gray-400 max-w-[260px] leading-relaxed">{description}</p>
-      {actionLabel && onAction && (
-        <button
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="flex flex-col items-center justify-center py-16 px-8 text-center"
+    >
+      <motion.span
+        animate={{ y: [0, -6, 0] }}
+        transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+        className="text-5xl mb-4 block"
+        role="img"
+      >
+        {c.emoji}
+      </motion.span>
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">{c.title}</h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-[220px]">{c.body}</p>
+      {c.cta && onAction && (
+        <motion.button
           onClick={onAction}
-          className="mt-5 px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-xl transition-colors shadow-sm shadow-indigo-500/20"
+          whileTap={{ scale: 0.96 }}
+          className="px-5 py-2.5 rounded-xl bg-brand-500 text-white text-sm font-medium"
         >
-          {actionLabel}
-        </button>
+          {c.cta}
+        </motion.button>
       )}
-    </div>
+    </motion.div>
   )
 }

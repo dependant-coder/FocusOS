@@ -1,7 +1,6 @@
 import type { Task } from '../../types'
 import TaskCard from './TaskCard'
-import EmptyState from '../ui/EmptyState'
-import { PackageOpen } from 'lucide-react'
+import { EmptyState } from '../ui/EmptyState'
 
 interface TaskListProps {
   tasks: Task[]
@@ -15,10 +14,7 @@ export default function TaskList({ tasks, onPin, onTap, isPinning, onAddFirst }:
   if (tasks.length === 0) {
     return (
       <EmptyState
-        icon={PackageOpen}
-        title="No tasks yet"
-        description="Your master vault is empty. Add your first task to get started!"
-        actionLabel="Add Task"
+        variant="vault"
         onAction={onAddFirst}
       />
     )

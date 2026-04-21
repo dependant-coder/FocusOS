@@ -1,0 +1,906 @@
+Let me dig deeper into the actual source code.I can see from the repo structure and tailwind config what's been built. The app is in early scaffolding stage — 1 commit, `dev-dist` exists (dev server has been run), Inter font, brand indigo palette, basic slide-up/fade-in animations, safe-area insets defined. The 49% JS / 49% TS split also tells me type safety needs tightening. Let me now give you the full analysis.
+
+---
+
+## 🔬 FocusOS — UX/UI Improvement Analysis
+
+---
+
+## Category 1 — Micro-UX & Polish
+
+### 1.1 Interactions
+
+---
+
+#### ✅ Task Completion — Satisfying Checkoff Animation
+Right now a checkbox is just a checkbox. On a productivity app, the moment of completion needs to *feel* rewarding.
+
+```tsx
+// components/ui/CheckboxRing.tsx
+import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
+
+interface CheckboxRingProps {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  priority?: 'critical' | 'high' | 'medium' | 'low'
+}
+
+const priorityColors = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#22c55e',
+}
+
+export function CheckboxRing({ checked, onChange, priority = 'medium' }: CheckboxRingProps) {
+  const color = priorityColors[priority]
+
+  return (
+    <motion.button
+      onClick={() => onChange(!checked)}
+      className="relative w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2"
+      style={{ borderColor: checked ? color : '#d1d5db' }}
+      whileTap={{ scale: 0.85 }}
+      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+    >
+      {/* Fill circle on check */}
+      <motion.div
+        className="absolute inset-0 rounded-full"
+        style={{ backgroundColor: color }}
+        initial={false}
+        animate={{ scale: checked ? 1 : 0, opacity: checked ? 1 : 0 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+      />
+
+      {/* Checkmark */}
+      <AnimatePresence>
+        {checked && (
+          <motion.svg
+            className="relative z-10 w-3 h-3 text-white"
+            viewBox="0 0 12 12"
+            initial={{ pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 1 }}
+            exit={{ pathLength: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
+          >
+            <motion.path
+              d="M2 6l3 3 5-5"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              fill="none"
+            />
+          </motion.svg>
+        )}
+      </AnimatePresence>
+
+      {/* Burst particles on completion */}
+      <AnimatePresence>
+        {checked && (
+          <>
+            {[0, 60, 120, 180, 240, 300].map((deg) => (
+              <motion.div
+                key={deg}
+                className="absolute w-1 h-1 rounded-full"
+                style={{ backgroundColor: color }}
+                initial={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                animate={{
+                  x: Math.cos((deg * Math.PI) / 180) * 14,
+                  y: Math.sin((deg * Math.PI) / 180) * 14,
+                  opacity: 0,
+                  scale: 0,
+                }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+              />
+            ))}
+          </>
+        )}
+      </AnimatePresence>
+    </motion.button>
+  )
+}
+```
+
+---
+
+#### ✅ Task Card Swipe-to-Complete with Reveal
+```tsx
+// components/daily/DailyTodoItem.tsx
+import { motion, useMotionValue, useTransform, AnimatePresence } from 'framer-motion'
+import { RiCheckLine, RiDeleteBinLine } from 'react-icons/ri'
+
+interface SwipeableItemProps {
+  onComplete: () => void
+  onDelete: () => void
+  children: React.ReactNode
+}
+
+export function SwipeableItem({ onComplete, onDelete, children }: SwipeableItemProps) {
+  const x = useMotionValue(0)
+  const background = useTransform(
+    x,
+    [-80, -20, 0, 20, 80],
+    ['#ef4444', '#fca5a5', '#ffffff', '#bbf7d0', '#22c55e']
+  )
+  const leftOpacity  = useTransform(x, [0, 60], [0, 1])
+  const rightOpacity = useTransform(x, [-60, 0], [1, 0])
+
+  function handleDragEnd(_: unknown, info: { offset: { x: number } }) {
+    if (info.offset.x > 72)       onComplete()
+    else if (info.offset.x < -72) onDelete()
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-xl mb-2">
+      {/* Background action layer */}
+      <motion.div
+        className="absolute inset-0 flex items-center justify-between px-5"
+        style={{ background }}
+      >
+        <motion.div style={{ opacity: leftOpacity }}>
+          <RiCheckLine className="text-white text-xl" />
+        </motion.div>
+        <motion.div style={{ opacity: rightOpacity }}>
+          <RiDeleteBinLine className="text-white text-xl" />
+        </motion.div>
+      </motion.div>
+
+      {/* Draggable card */}
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: -100, right: 100 }}
+        dragElastic={0.1}
+        onDragEnd={handleDragEnd}
+        style={{ x }}
+        className="relative bg-white dark:bg-gray-800 cursor-grab active:cursor-grabbing"
+        whileTap={{ cursor: 'grabbing' }}
+      >
+        {children}
+      </motion.div>
+    </div>
+  )
+}
+```
+
+---
+
+#### ✅ FAB Pulse on Empty State
+```tsx
+// components/ui/FAB.tsx
+import { motion } from 'framer-motion'
+import { RiAddLine } from 'react-icons/ri'
+
+export function FAB({ onClick, pulse = false }: { onClick: () => void; pulse?: boolean }) {
+  return (
+    <div className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] right-4 z-50">
+      {pulse && (
+        <motion.div
+          className="absolute inset-0 rounded-full bg-brand-500"
+          animate={{ scale: [1, 1.6], opacity: [0.4, 0] }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: 'easeOut' }}
+        />
+      )}
+      <motion.button
+        onClick={onClick}
+        className="w-14 h-14 rounded-full bg-brand-500 text-white shadow-lg flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2"
+        whileTap={{ scale: 0.92 }}
+        whileHover={{ scale: 1.05 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+      >
+        <motion.div
+          animate={{ rotate: pulse ? [0, 5, -5, 0] : 0 }}
+          transition={{ duration: 0.5, repeat: pulse ? Infinity : 0, repeatDelay: 2 }}
+        >
+          <RiAddLine className="text-2xl" />
+        </motion.div>
+      </motion.button>
+    </div>
+  )
+}
+```
+
+---
+
+### 1.2 Transitions & Animations
+
+---
+
+#### ✅ Page Transition System
+```tsx
+// components/layout/PageTransition.tsx
+import { motion } from 'framer-motion'
+
+const variants = {
+  initial: { opacity: 0, y: 10 },
+  animate: { opacity: 1, y: 0 },
+  exit:    { opacity: 0, y: -10 },
+}
+
+export function PageTransition({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      variants={variants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+      className="flex-1 overflow-y-auto"
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+// Wrap every page in App.tsx:
+// <AnimatePresence mode="wait">
+//   <Routes location={location} key={location.pathname}>
+//     <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+//   </Routes>
+// </AnimatePresence>
+```
+
+---
+
+#### ✅ Task Strikethrough on Completion
+```tsx
+// In DailyTodoItem.tsx — title span
+<motion.span
+  animate={{
+    textDecoration: done ? 'line-through' : 'none',
+    opacity: done ? 0.45 : 1,
+    color: done ? '#9ca3af' : 'inherit',
+  }}
+  transition={{ duration: 0.25 }}
+  className="text-sm font-medium"
+>
+  {title}
+</motion.span>
+```
+
+---
+
+#### ✅ BottomSheet Spring Entry
+```tsx
+// components/ui/BottomSheet.tsx
+import { motion, AnimatePresence } from 'framer-motion'
+import { useEffect } from 'react'
+
+export function BottomSheet({
+  open,
+  onClose,
+  children,
+  title,
+}: {
+  open: boolean
+  onClose: () => void
+  children: React.ReactNode
+  title?: string
+}) {
+  // Prevent body scroll when sheet is open
+  useEffect(() => {
+    if (open) document.body.style.overflow = 'hidden'
+    else       document.body.style.overflow = ''
+    return () => { document.body.style.overflow = '' }
+  }, [open])
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            className="fixed inset-0 bg-black/50 z-40 backdrop-blur-[2px]"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={onClose}
+          />
+
+          {/* Sheet */}
+          <motion.div
+            className="fixed bottom-0 inset-x-0 z-50 bg-white dark:bg-gray-900 rounded-t-2xl pb-[env(safe-area-inset-bottom)] max-h-[92dvh] flex flex-col"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+          >
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-2 flex-shrink-0">
+              <div className="w-10 h-1 rounded-full bg-gray-200 dark:bg-gray-700" />
+            </div>
+
+            {title && (
+              <h2 className="text-base font-semibold px-5 pb-3 flex-shrink-0 border-b border-gray-100 dark:border-gray-800">
+                {title}
+              </h2>
+            )}
+
+            <div className="overflow-y-auto flex-1 overscroll-contain">
+              {children}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  )
+}
+```
+
+---
+
+### 1.3 Typography & Spacing
+
+---
+
+#### ✅ Consistent Type Scale — add to `tailwind.config.ts`
+```ts
+// tailwind.config.ts additions
+fontSize: {
+  '2xs': ['0.625rem', { lineHeight: '0.875rem' }],  // 10px — labels
+  xs:    ['0.75rem',  { lineHeight: '1rem'     }],  // 12px — meta
+  sm:    ['0.875rem', { lineHeight: '1.25rem'  }],  // 14px — body small
+  base:  ['1rem',     { lineHeight: '1.5rem'   }],  // 16px — body
+  lg:    ['1.125rem', { lineHeight: '1.75rem'  }],  // 18px — section title
+  xl:    ['1.25rem',  { lineHeight: '1.75rem'  }],  // 20px — page title
+  '2xl': ['1.5rem',   { lineHeight: '2rem'     }],  // 24px — greeting
+},
+```
+
+#### ✅ TaskCard — fix visual hierarchy
+```tsx
+// Replace flat card padding with this structure
+<div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 overflow-hidden mb-2">
+  <div className="flex items-start gap-3 px-4 py-3.5">
+    {/* Priority stripe */}
+    <div className={`w-0.5 self-stretch rounded-full flex-shrink-0 ${priorityStripe[priority]}`} />
+
+    <CheckboxRing checked={done} onChange={onToggle} priority={priority} />
+
+    <div className="flex-1 min-w-0">
+      {/* Title — prominent */}
+      <p className={`text-sm font-medium leading-snug truncate ${done ? 'line-through text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
+        {title}
+      </p>
+      {/* Meta row — muted */}
+      <div className="flex items-center gap-1.5 mt-1">
+        <CategoryBadge category={category} />
+        {due_date && <DateChip date={due_date} />}
+      </div>
+    </div>
+
+    {/* Pin toggle — right aligned, smaller */}
+    <Toggle checked={pin_to_today} onChange={onPin} size="sm" />
+  </div>
+</div>
+```
+
+---
+
+## Category 2 — Macro-UX & Features
+
+### 2.1 Friction Points
+
+---
+
+#### ✅ Quick-Add Bar (Brain-dump to Vault in < 3 seconds)
+**The problem:** Adding a task currently requires: tap FAB → sheet opens → fill 9 fields → tap save. For a brain dump at 2am, that's way too much friction. You need a zero-friction entry point.
+
+```tsx
+// components/tasks/QuickAddBar.tsx
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { RiAddLine, RiArrowRightLine } from 'react-icons/ri'
+import { useCreateTask } from '../../hooks/useTasks'
+
+export function QuickAddBar() {
+  const [text, setText]       = useState('')
+  const [active, setActive]   = useState(false)
+  const { mutate: create }    = useCreateTask()
+
+  function handleSubmit() {
+    if (!text.trim()) return
+    create({ title: text.trim(), priority: 'medium', category: 'personal', status: 'not_started' })
+    setText('')
+    setActive(false)
+  }
+
+  return (
+    <div className="px-4 pb-3">
+      <AnimatePresence initial={false}>
+        {!active ? (
+          <motion.button
+            key="placeholder"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setActive(true)}
+            className="w-full flex items-center gap-3 px-4 py-3 bg-gray-50 dark:bg-gray-800/60 rounded-xl text-gray-400 text-sm border border-dashed border-gray-200 dark:border-gray-700"
+          >
+            <RiAddLine className="text-lg flex-shrink-0" />
+            Add a task quickly...
+          </motion.button>
+        ) : (
+          <motion.div
+            key="input"
+            initial={{ scale: 0.97, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.97, opacity: 0 }}
+            className="flex items-center gap-2 px-4 py-3 bg-white dark:bg-gray-800 rounded-xl border border-brand-300 dark:border-brand-600 shadow-sm"
+          >
+            <input
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit() }}
+              onBlur={() => { if (!text) setActive(false) }}
+              placeholder="What needs to be done?"
+              className="flex-1 text-sm bg-transparent outline-none placeholder-gray-400"
+            />
+            <AnimatePresence>
+              {text && (
+                <motion.button
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                  onClick={handleSubmit}
+                  className="w-7 h-7 rounded-lg bg-brand-500 text-white flex items-center justify-center flex-shrink-0"
+                >
+                  <RiArrowRightLine className="text-sm" />
+                </motion.button>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+```
+
+---
+
+#### ✅ Morning Onboarding Banner (First-time empty state)
+```tsx
+// components/daily/MorningBanner.tsx
+import { motion } from 'framer-motion'
+
+const greetings = ['morning', 'afternoon', 'evening']
+
+function getGreeting() {
+  const h = new Date().getHours()
+  if (h < 12) return greetings[0]
+  if (h < 17) return greetings[1]
+  return greetings[2]
+}
+
+export function MorningBanner({ name, taskCount }: { name: string; taskCount: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1, duration: 0.35 }}
+      className="px-4 pt-5 pb-4"
+    >
+      <p className="text-2xl font-semibold text-gray-900 dark:text-white">
+        Good {getGreeting()}, {name.split(' ')[0]} 👋
+      </p>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+        {taskCount === 0
+          ? "No tasks yet — clean slate. Add something."
+          : `You have ${taskCount} thing${taskCount > 1 ? 's' : ''} to tackle today.`}
+      </p>
+    </motion.div>
+  )
+}
+```
+
+---
+
+### 2.2 Missing Core Features
+
+---
+
+#### ✅ Bulk Actions — Select Multiple + Complete/Delete/Reschedule
+```tsx
+// hooks/useBulkSelect.ts
+import { useState, useCallback } from 'react'
+
+export function useBulkSelect() {
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [active, setActive]     = useState(false)
+
+  const toggle = useCallback((id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else               next.add(id)
+      return next
+    })
+  }, [])
+
+  const clear = useCallback(() => {
+    setSelected(new Set())
+    setActive(false)
+  }, [])
+
+  return { selected, active, setActive, toggle, clear, count: selected.size }
+}
+```
+
+```tsx
+// components/tasks/BulkActionBar.tsx — floats above BottomNav when active
+import { motion, AnimatePresence } from 'framer-motion'
+
+export function BulkActionBar({
+  count,
+  onComplete,
+  onDelete,
+  onCancel,
+}: {
+  count: number
+  onComplete: () => void
+  onDelete: () => void
+  onCancel: () => void
+}) {
+  return (
+    <AnimatePresence>
+      {count > 0 && (
+        <motion.div
+          initial={{ y: 80, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 80, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+          className="fixed bottom-[calc(4rem+env(safe-area-inset-bottom))] inset-x-4 z-50 bg-gray-900 dark:bg-gray-800 rounded-2xl px-4 py-3 flex items-center justify-between shadow-xl"
+        >
+          <span className="text-sm font-medium text-white">{count} selected</span>
+          <div className="flex items-center gap-2">
+            <button onClick={onComplete} className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-medium">
+              Complete
+            </button>
+            <button onClick={onDelete} className="px-3 py-1.5 rounded-lg bg-red-500 text-white text-xs font-medium">
+              Delete
+            </button>
+            <button onClick={onCancel} className="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-medium">
+              Cancel
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  )
+}
+```
+
+---
+
+#### ✅ Drag-and-Drop Priority Reordering (using `@dnd-kit`)
+```bash
+npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities
+```
+
+```tsx
+// components/vault/SortableTaskList.tsx
+import {
+  DndContext, closestCenter, PointerSensor,
+  useSensor, useSensors, DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext, verticalListSortingStrategy,
+  useSortable, arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+
+function SortableTaskCard({ task }: { task: Task }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: task.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={isDragging ? 'opacity-50 scale-[1.02] shadow-xl z-10 relative' : ''}
+      {...attributes}
+      {...listeners}
+    >
+      <TaskCard task={task} />
+    </div>
+  )
+}
+
+export function SortableTaskList({ tasks, onReorder }: { tasks: Task[]; onReorder: (tasks: Task[]) => void }) {
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      const oldIndex = tasks.findIndex(t => t.id === active.id)
+      const newIndex = tasks.findIndex(t => t.id === over.id)
+      onReorder(arrayMove(tasks, oldIndex, newIndex))
+    }
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
+        {tasks.map(task => <SortableTaskCard key={task.id} task={task} />)}
+      </SortableContext>
+    </DndContext>
+  )
+}
+```
+
+---
+
+#### ✅ Today's Progress Bar — Persistent Header
+```tsx
+// components/daily/DailyProgressHeader.tsx
+import { motion } from 'framer-motion'
+
+export function DailyProgressHeader({
+  completed,
+  total,
+  date,
+}: {
+  completed: number
+  total: number
+  date: Date
+}) {
+  const pct = total > 0 ? Math.round((completed / total) * 100) : 0
+  const allDone = total > 0 && completed === total
+
+  return (
+    <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 px-4 pt-[env(safe-area-inset-top)] pb-3">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            {date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+          </p>
+          <motion.p
+            key={allDone ? 'done' : 'progress'}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-base font-semibold text-gray-900 dark:text-white"
+          >
+            {allDone ? '🎉 All done!' : `${completed} of ${total} done`}
+          </motion.p>
+        </div>
+        <motion.span
+          key={pct}
+          animate={{ scale: [1.1, 1] }}
+          transition={{ duration: 0.2 }}
+          className="text-2xl font-bold text-brand-500"
+        >
+          {pct}%
+        </motion.span>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+        <motion.div
+          className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600"
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
+        />
+      </div>
+
+      {/* Confetti burst when 100% */}
+      {allDone && (
+        <motion.div
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ delay: 2, duration: 0.5 }}
+          className="absolute inset-0 pointer-events-none"
+          // Wire confetti library here: npm install canvas-confetti
+        />
+      )}
+    </div>
+  )
+}
+```
+
+---
+
+#### ✅ Empty States — Every Page Needs One
+```tsx
+// components/ui/EmptyState.tsx
+import { motion } from 'framer-motion'
+
+const configs = {
+  vault: {
+    emoji: '📋',
+    title: 'No tasks yet',
+    body: 'Start by adding something you need to get done.',
+    cta: 'Add your first task',
+  },
+  daily: {
+    emoji: '☀️',
+    title: "You're free today",
+    body: 'No tasks pinned or due. Enjoy it — or add something.',
+    cta: 'Add a task',
+  },
+  habits: {
+    emoji: '🌱',
+    title: 'No habits yet',
+    body: "Small daily actions compound into big results. Start one.",
+    cta: 'Add a habit',
+  },
+  weekly: {
+    emoji: '📆',
+    title: 'Nothing to review',
+    body: "Complete some tasks this week and come back Sunday.",
+    cta: null,
+  },
+}
+
+export function EmptyState({
+  variant,
+  onAction,
+}: {
+  variant: keyof typeof configs
+  onAction?: () => void
+}) {
+  const c = configs[variant]
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3, ease: 'easeOut' }}
+      className="flex flex-col items-center justify-center py-16 px-8 text-center"
+    >
+      <motion.span
+        animate={{ y: [0, -6, 0] }}
+        transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+        className="text-5xl mb-4 block"
+        role="img"
+      >
+        {c.emoji}
+      </motion.span>
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">{c.title}</h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-[220px]">{c.body}</p>
+      {c.cta && onAction && (
+        <motion.button
+          onClick={onAction}
+          whileTap={{ scale: 0.96 }}
+          className="px-5 py-2.5 rounded-xl bg-brand-500 text-white text-sm font-medium"
+        >
+          {c.cta}
+        </motion.button>
+      )}
+    </motion.div>
+  )
+}
+```
+
+---
+
+#### ✅ Skeleton Loader — Stop Blank Screens
+```tsx
+// components/ui/Skeleton.tsx
+function SkeletonBlock({ className }: { className?: string }) {
+  return (
+    <div className={`bg-gray-100 dark:bg-gray-800 rounded-lg animate-pulse ${className}`} />
+  )
+}
+
+export function TaskCardSkeleton() {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 px-4 py-3.5 mb-2 flex items-start gap-3">
+      <SkeletonBlock className="w-6 h-6 rounded-full flex-shrink-0" />
+      <div className="flex-1">
+        <SkeletonBlock className="h-4 w-3/4 mb-2" />
+        <div className="flex gap-1.5">
+          <SkeletonBlock className="h-3 w-16 rounded-full" />
+          <SkeletonBlock className="h-3 w-14 rounded-full" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function VaultSkeleton() {
+  return (
+    <div className="px-4 pt-4">
+      {[1, 2, 3, 4].map(i => <TaskCardSkeleton key={i} />)}
+    </div>
+  )
+}
+
+export function DailySkeleton() {
+  return (
+    <div className="px-4">
+      <SkeletonBlock className="h-3 w-32 mb-4 mt-2" />
+      {[1, 2, 3].map(i => <TaskCardSkeleton key={i} />)}
+      <SkeletonBlock className="h-3 w-20 mb-3 mt-5" />
+      {[1, 2].map(i => <TaskCardSkeleton key={i} />)}
+    </div>
+  )
+}
+```
+
+---
+
+#### ✅ Overdue Badge with Pulse
+```tsx
+// components/tasks/OverdueBadge.tsx
+import { motion } from 'framer-motion'
+
+export function OverdueBadge() {
+  return (
+    <span className="relative inline-flex items-center gap-1 text-2xs font-semibold uppercase tracking-wide text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 px-2 py-0.5 rounded-full">
+      <motion.span
+        className="w-1.5 h-1.5 rounded-full bg-red-500"
+        animate={{ opacity: [1, 0.2, 1] }}
+        transition={{ duration: 1.2, repeat: Infinity }}
+      />
+      Overdue
+    </span>
+  )
+}
+```
+
+---
+
+#### ✅ Keyboard Shortcut Map (Desktop / Physical Keyboard users)
+```tsx
+// hooks/useKeyboardShortcuts.ts
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+
+export function useKeyboardShortcuts(onAddTask: () => void) {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      // Skip if user is typing in an input
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) return
+
+      if (e.key === 'n' && !e.metaKey && !e.ctrlKey) onAddTask()       // n = new task
+      if (e.key === '1') navigate('/')           // 1 = Home
+      if (e.key === '2') navigate('/daily')      // 2 = Daily
+      if (e.key === '3') navigate('/vault')      // 3 = Vault
+      if (e.key === '4') navigate('/habits')     // 4 = Habits
+      if (e.key === '?') {/* show shortcuts modal */}
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigate, onAddTask])
+}
+```
+
+---
+
+## Final Priority Checklist
+
+### 🔴 Do First (Highest Impact)
+- [ ] `CheckboxRing.tsx` — satisfying animated checkmark with burst particles
+- [ ] `SwipeableItem.tsx` — swipe right to complete, swipe left to delete
+- [ ] `DailyProgressHeader.tsx` — sticky progress bar on Daily page
+- [ ] `BottomSheet.tsx` — spring animation, backdrop blur, body scroll lock
+- [ ] `EmptyState.tsx` — all 4 variants with floating emoji
+
+### 🟠 Do Second (High Value, Low Effort)
+- [ ] `QuickAddBar.tsx` — inline zero-friction task entry on Vault and Daily
+- [ ] `MorningBanner.tsx` — contextual greeting with task count
+- [ ] `TaskCardSkeleton` + `VaultSkeleton` + `DailySkeleton` — no blank screens
+- [ ] Page transitions via `AnimatePresence` in `App.tsx`
+- [ ] Task strikethrough + fade on completion
+- [ ] `OverdueBadge.tsx` with pulsing dot
+
+### 🟡 Do Third (Feature Completeness)
+- [ ] `BulkActionBar.tsx` + `useBulkSelect.ts` — long-press to activate, bulk complete/delete
+- [ ] `SortableTaskList.tsx` via `@dnd-kit` — drag to reorder within priority groups
+- [ ] `FAB.tsx` pulse animation on empty state onboarding hint
+- [ ] `useKeyboardShortcuts.ts` — `n` for new task, number keys for navigation
+
+### 🟢 Do Last (Polish Layer)
+- [ ] Tailwind type scale additions to `tailwind.config.ts`
+- [ ] `TaskCard` visual hierarchy fix (priority stripe, muted meta row)
+- [ ] Confetti on 100% daily completion (`canvas-confetti`)
+- [ ] `2xs` font size for `OverdueBadge` and other label text
+- [ ] `backdrop-blur-sm` on all sticky headers for glass effect

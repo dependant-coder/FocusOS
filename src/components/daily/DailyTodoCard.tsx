@@ -1,52 +1,53 @@
 import { motion } from 'framer-motion'
+import { CheckboxRing } from '../ui/CheckboxRing'
+import { SwipeableItem } from './SwipeableItem'
 import type { DailyTodo } from '../../types'
 import type { Priority, Category } from '../../types'
 import PriorityBadge from '../tasks/PriorityBadge'
 import CategoryBadge from '../tasks/CategoryBadge'
-import { Check, CornerDownRight, Link as LinkIcon, ChevronDown, ChevronUp } from 'lucide-react'
+import { CornerDownRight, Link as LinkIcon, ChevronDown, ChevronUp } from 'lucide-react'
 import { useState } from 'react'
 
 interface DailyTodoCardProps {
   todo: DailyTodo & { tasks?: { description: string | null; resources_url: string | null } | null }
   onToggle: (id: string, done: boolean) => void
+  onDelete: (id: string) => void
   isToggling: boolean
 }
 
-export default function DailyTodoCard({ todo, onToggle, isToggling }: DailyTodoCardProps) {
+export default function DailyTodoCard({ todo, onToggle, onDelete }: Omit<DailyTodoCardProps, 'isToggling'>) {
   const [expanded, setExpanded] = useState(false)
   const hasDetails = todo.tasks?.description || todo.tasks?.resources_url
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`
-        relative bg-white dark:bg-gray-900 rounded-xl border
-        ${todo.done
-          ? 'border-gray-100 dark:border-gray-800 opacity-70'
-          : 'border-gray-200/60 dark:border-gray-800/60 shadow-sm'
-        }
-        transition-all
-      `}
+    <SwipeableItem 
+      onComplete={() => onToggle(todo.id, true)} 
+      onDelete={() => onDelete(todo.id)}
     >
-      <div className="flex items-start gap-3 p-3.5">
-        {/* Checkbox */}
-        <button
-          onClick={() => onToggle(todo.id, !todo.done)}
-          disabled={isToggling}
-          className={`
-            shrink-0 mt-0.5 w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all
-            ${todo.done
-              ? 'bg-emerald-500 border-emerald-500 text-white'
-              : 'border-gray-300 dark:border-gray-600 hover:border-indigo-400 dark:hover:border-indigo-500'
-            }
-          `}
-        >
-          {todo.done && <Check size={12} strokeWidth={3} />}
-        </button>
+      <motion.div
+        layout
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={`
+          relative bg-white dark:bg-gray-900 rounded-xl border
+          ${todo.done
+            ? 'border-gray-100 dark:border-gray-800 opacity-70'
+            : 'border-gray-200/60 dark:border-gray-800/60 shadow-sm'
+          }
+          transition-all
+        `}
+      >
+        <div className="flex items-start gap-3 p-3.5">
+          {/* Checkbox */}
+          <div className="shrink-0 mt-0.5">
+            <CheckboxRing
+              checked={todo.done}
+              onChange={(checked) => onToggle(todo.id, checked)}
+              priority={todo.priority as any}
+            />
+          </div>
 
-        {/* Content */}
+          {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <p className={`text-sm font-medium leading-snug ${
@@ -107,7 +108,8 @@ export default function DailyTodoCard({ todo, onToggle, isToggling }: DailyTodoC
             </motion.div>
           )}
         </div>
-      </div>
-    </motion.div>
+        </div>
+      </motion.div>
+    </SwipeableItem>
   )
 }

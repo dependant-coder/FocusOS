@@ -3,7 +3,7 @@ import { AnimatePresence } from 'framer-motion'
 import PageShell from '../components/layout/PageShell'
 import HabitRow from '../components/habits/HabitRow'
 import HabitForm from '../components/habits/HabitForm'
-import EmptyState from '../components/ui/EmptyState'
+import { EmptyState } from '../components/ui/EmptyState'
 import FAB from '../components/ui/FAB'
 import {
   useHabits,
@@ -12,7 +12,7 @@ import {
   useToggleHabitLog,
   useDeleteHabit,
 } from '../hooks/useHabits'
-import { Leaf, Check, TrendingUp } from 'lucide-react'
+import { Check, TrendingUp } from 'lucide-react'
 
 export default function Habits() {
   const { data: habits = [], isLoading } = useHabits()
@@ -104,10 +104,7 @@ export default function Habits() {
         </div>
       ) : habits.length === 0 ? (
         <EmptyState
-          icon={Leaf}
-          title="No habits yet"
-          description="Build consistency by tracking small daily habits."
-          actionLabel="Create First Habit"
+          variant="habits"
           onAction={() => setShowForm(true)}
         />
       ) : (
