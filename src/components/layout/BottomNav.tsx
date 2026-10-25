@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import {
-  Home, CalendarCheck, Archive, Leaf, BarChart3,
+  Home, CalendarCheck, Archive, Leaf, BarChart3
 } from 'lucide-react'
 
 const NAV_ITEMS = [

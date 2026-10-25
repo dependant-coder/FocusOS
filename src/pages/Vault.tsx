@@ -7,6 +7,7 @@ import FAB from '../components/ui/FAB'
 import { useTasks, useCreateTask, useUpdateTask, useDeleteTask, usePinTask } from '../hooks/useTasks'
 import type { Task, TaskFilters, SortField } from '../types'
 import { PRIORITY_ORDER } from '../lib/constants'
+import { VaultSkeleton } from '../components/ui/Skeleton'
 import { Layers, GraduationCap, Brain, Lightbulb, AlertCircle, Trash2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -158,11 +159,7 @@ export default function Vault() {
 
       {/* Task list */}
       {isLoading ? (
-        <div className="space-y-3 px-4 py-3">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="animate-pulse bg-white dark:bg-gray-900 rounded-xl h-24 border-l-4 border-gray-200 dark:border-gray-700" />
-          ))}
-        </div>
+        <VaultSkeleton />
       ) : (
         <TaskList
           tasks={sortedTasks}

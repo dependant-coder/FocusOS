@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { Crosshair } from 'lucide-react'
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
 import { supabase } from './lib/supabase'
 import { useRealtimeSync } from './hooks/useRealtime'
 import { useAuth } from './hooks/useAuth'
@@ -11,20 +12,12 @@ const Home = lazy(() => import('./pages/Home'))
 const Vault = lazy(() => import('./pages/Vault'))
 const Daily = lazy(() => import('./pages/Daily'))
 const Habits = lazy(() => import('./pages/Habits'))
-import PageShell from './components/layout/PageShell'
+const Weekly = lazy(() => import('./pages/Weekly'))
+const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
+const Settings = lazy(() => import('./pages/Settings'))
 
-// Placeholder pages for later phases
-function PlaceholderPage({ title }: { title: string }) {
-  return (
-    <PageShell title={title}>
-      <div className="flex items-center justify-center py-32 px-4">
-        <div className="text-center">
-          <p className="text-gray-400 dark:text-gray-500 text-sm">Coming soon</p>
-        </div>
-      </div>
-    </PageShell>
-  )
-}
+import { Toaster } from 'react-hot-toast'
+import { PageTransition } from './components/layout/PageTransition'
 
 function LoadingScreen() {
   return (
@@ -42,21 +35,24 @@ function LoadingScreen() {
 
 function AppRoutes() {
   const { user } = useAuth()
+  const location = useLocation()
   // Subscribe to Realtime changes for cross-tab/device sync
   useRealtimeSync(user?.id ?? '')
 
   return (
     <Suspense fallback={<LoadingScreen />}>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/daily" element={<Daily />} />
-        <Route path="/vault" element={<Vault />} />
-        <Route path="/habits" element={<Habits />} />
-        <Route path="/weekly" element={<PlaceholderPage title="Weekly" />} />
-        <Route path="/analytics" element={<PlaceholderPage title="Analytics" />} />
-        <Route path="/settings" element={<PlaceholderPage title="Settings" />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+          <Route path="/daily" element={<PageTransition><Daily /></PageTransition>} />
+          <Route path="/vault" element={<PageTransition><Vault /></PageTransition>} />
+          <Route path="/habits" element={<PageTransition><Habits /></PageTransition>} />
+          <Route path="/weekly" element={<PageTransition><Weekly /></PageTransition>} />
+          <Route path="/analytics" element={<PageTransition><Analytics /></PageTransition>} />
+          <Route path="/settings" element={<PageTransition><Settings /></PageTransition>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AnimatePresence>
     </Suspense>
   )
 }
@@ -92,6 +88,19 @@ export default function App() {
   }
 
   return (
+    <>
+    <Toaster 
+      position="top-center" 
+      toastOptions={{
+        duration: 2500,
+        style: {
+          borderRadius: '12px',
+          background: '#1f2937',
+          color: '#fff',
+          fontSize: '14px',
+        },
+      }} 
+    />
     <Routes>
       <Route
         path="/auth"
@@ -110,5 +119,6 @@ export default function App() {
         element={session ? <AppRoutes /> : <Navigate to="/auth" replace />}
       />
     </Routes>
+    </>
   )
 }

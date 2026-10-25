@@ -7,7 +7,7 @@ import { DAILY_QUOTES } from '../lib/constants'
 import PageShell from '../components/layout/PageShell'
 import ProgressRing from '../components/daily/ProgressRing'
 import { Link } from 'react-router-dom'
-import { Calendar, Inbox, Sparkles, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react'
+import { Calendar, Inbox, Sparkles, CheckCircle2, AlertCircle, ArrowRight, Settings } from 'lucide-react'
 
 // Helper to get day of year for the quote
 const getDayOfYear = () => {
@@ -58,11 +58,19 @@ export default function Home() {
       <div className="pb-24 pt-6 px-4 max-w-md mx-auto space-y-8">
         
         {/* Header section */}
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
-            {greeting}
-          </h1>
-          <p className="text-gray-500 dark:text-gray-400 font-medium">{todayDate}</p>
+        <div className="flex items-start justify-between">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">
+              {greeting}
+            </h1>
+            <p className="text-gray-500 dark:text-gray-400 font-medium">{todayDate}</p>
+          </div>
+          <Link
+            to="/settings"
+            className="mt-1 p-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+          >
+            <Settings size={20} className="text-gray-600 dark:text-gray-400" />
+          </Link>
         </div>
 
         {/* Daily Quote Card */}

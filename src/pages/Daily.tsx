@@ -7,6 +7,7 @@ import { MorningBanner } from '../components/daily/MorningBanner'
 import { QuickAddBar } from '../components/daily/QuickAddBar'
 import { useAuth } from '../hooks/useAuth'
 
+import { DailySkeleton } from '../components/ui/Skeleton'
 import { useDailyTodos, useToggleDailyTodo, useDeleteDailyTodo } from '../hooks/useDailyTodos'
 import { PRIORITY_ORDER } from '../lib/constants'
 import {
@@ -61,11 +62,7 @@ export default function Daily() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="space-y-3 px-4 py-3">
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="animate-pulse bg-white dark:bg-gray-900 rounded-xl h-16 border border-gray-100 dark:border-gray-800" />
-          ))}
-        </div>
+        <DailySkeleton />
       ) : totalCount === 0 ? (
         <EmptyState
           variant="daily"

@@ -50,13 +50,20 @@ export default function DailyTodoCard({ todo, onToggle, onDelete }: Omit<DailyTo
           {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <p className={`text-sm font-medium leading-snug ${
-              todo.done
-                ? 'line-through text-gray-400 dark:text-gray-600'
-                : 'text-gray-900 dark:text-white'
-            }`}>
+            <motion.p
+              animate={{
+                opacity: todo.done ? 0.45 : 1,
+                color: todo.done ? '#9ca3af' : undefined,
+              }}
+              transition={{ duration: 0.25 }}
+              className={`text-sm font-medium leading-snug ${
+                todo.done
+                  ? 'line-through text-gray-400 dark:text-gray-600'
+                  : 'text-gray-900 dark:text-white'
+              }`}
+            >
               {todo.title}
-            </p>
+            </motion.p>
             {hasDetails && (
               <button
                 onClick={() => setExpanded(!expanded)}

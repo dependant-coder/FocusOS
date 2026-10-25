@@ -5,7 +5,8 @@ import CategoryBadge from './CategoryBadge'
 import StatusBadge from './StatusBadge'
 import DateChip from './DateChip'
 import Toggle from '../ui/Toggle'
-import { Pin, AlertTriangle } from 'lucide-react'
+import { Pin } from 'lucide-react'
+import { OverdueBadge } from './OverdueBadge'
 
 interface TaskCardProps {
   task: Task
@@ -61,11 +62,7 @@ export default function TaskCard({ task, onPin, onTap, isPinning }: TaskCardProp
           <CategoryBadge category={task.category as Category} />
           {task.status !== 'not_started' && <StatusBadge status={task.status as TaskStatus} />}
           {task.due_date && <DateChip date={task.due_date} />}
-          {task.is_overdue && (
-            <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-red-600 bg-red-50 dark:bg-red-500/10 px-1.5 py-0.5 rounded-full">
-              <AlertTriangle size={10} /> Overdue
-            </span>
-          )}
+          {task.is_overdue && <OverdueBadge />}
           {task.pin_to_today && (
             <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-indigo-600 bg-indigo-50 dark:bg-indigo-500/10 px-1.5 py-0.5 rounded-full">
               <Pin size={10} /> Pinned
