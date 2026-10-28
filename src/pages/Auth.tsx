@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase'
+import { useNavigate } from 'react-router-dom'
+import { supabase, bypassLogin } from '../lib/supabase'
 import { DAILY_QUOTES } from '../lib/constants'
 import { getDayOfYear } from '../lib/dates'
-import { Crosshair } from 'lucide-react'
+import { Crosshair, Zap } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type AuthMode = 'sign_in' | 'sign_up' | 'forgot_password'
@@ -22,7 +23,7 @@ export default function Auth() {
     try {
       if (mode === 'forgot_password') {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin,
+          redirectTo: `${window.location.origin}/auth/reset`,
         })
         if (error) throw error
         toast.success('Check your email for a reset link!')
@@ -31,7 +32,7 @@ export default function Auth() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: `${window.location.origin}/` },
         })
         if (error) throw error
         toast.success('Check your email to confirm your account!')
@@ -41,6 +42,26 @@ export default function Auth() {
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Something went wrong'
+      toast.error(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const navigate = useNavigate()
+
+  const handleBypassLogin = async () => {
+    setLoading(true)
+    try {
+      const res = await bypassLogin()
+      if (res.error) {
+        toast.error(`Login bypass: ${res.error.message}`)
+      } else {
+        toast.success('Signed in as Demo User')
+        navigate('/')
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to bypass login'
       toast.error(message)
     } finally {
       setLoading(false)
@@ -86,6 +107,17 @@ export default function Auth() {
 
         {/* Auth form */}
         <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl">
+          {/* Quick Bypass / Demo Mode Button */}
+          <button
+            type="button"
+            onClick={handleBypassLogin}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 text-sm font-semibold transition-all shadow-sm mb-4 group"
+          >
+            <Zap size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
+            <span>Bypass Login (Guest / Demo Mode)</span>
+          </button>
+
           {/* Google OAuth */}
           <button
             onClick={handleGoogleAuth}
@@ -117,7 +149,7 @@ export default function Auth() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
                 required
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
               />
             </div>
 
@@ -131,7 +163,7 @@ export default function Auth() {
                   placeholder="••••••••"
                   required
                   minLength={6}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-base sm:text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                 />
               </div>
             )}

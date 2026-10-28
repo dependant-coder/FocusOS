@@ -5,6 +5,7 @@ import { useWeekly } from '../hooks/useWeekly'
 import { WeekSummaryCard } from '../components/weekly/WeekSummaryCard'
 import { ReflectionForm } from '../components/weekly/ReflectionForm'
 import { format, startOfWeek, subWeeks, addWeeks } from 'date-fns'
+import { parseLocalDate } from '../lib/dates'
 
 import { Link } from 'react-router-dom'
 import { LineChart } from 'lucide-react'
@@ -50,7 +51,7 @@ export default function Weekly() {
               </svg>
             </button>
             <span className="text-sm font-medium text-gray-900 dark:text-white px-2">
-              {format(new Date(weekStart), 'MMM d, yyyy')}
+              {format(parseLocalDate(weekStart), 'MMM d, yyyy')}
             </span>
             <button 
               onClick={handleNextWeek}

@@ -1,13 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { useAuth } from './useAuth'
 
 export function useWeekly(weekStart: string) {
+  const { user } = useAuth()
+
   return useQuery({
-    queryKey: ['weekly', weekStart],
+    queryKey: ['weekly', user?.id, weekStart],
+    enabled: !!user,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('weekly_reviews')
         .select('*')
+        .eq('user_id', user!.id)
         .eq('week_start', weekStart)
         .maybeSingle()
 
@@ -34,7 +39,7 @@ export function useUpdateWeekly() {
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) throw new Error("Not logged in")
       
-      const updateData: any = {}
+      const updateData: { wins?: string | null; blockers?: string | null; next_priorities?: string | null } = {}
       if (wins !== undefined) updateData.wins = wins
       if (blockers !== undefined) updateData.blockers = blockers
       if (nextPriorities !== undefined) updateData.next_priorities = nextPriorities
@@ -47,8 +52,8 @@ export function useUpdateWeekly() {
         
       if (error) throw error
     },
-    onSettled: (_, __, { weekStart }) => {
-      qc.invalidateQueries({ queryKey: ['weekly', weekStart] })
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['weekly'] })
     },
   })
 }

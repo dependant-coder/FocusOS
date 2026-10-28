@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       daily_todos: {
         Row: {
+          carry_count: number
           carry_over: boolean
           category: string | null
           created_at: string | null
@@ -23,6 +24,7 @@ export type Database = {
           done: boolean
           habit_id: string | null
           id: string
+          must_do: boolean
           priority: string | null
           task_id: string | null
           title: string
@@ -30,6 +32,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          carry_count?: number
           carry_over?: boolean
           category?: string | null
           created_at?: string | null
@@ -37,6 +40,7 @@ export type Database = {
           done?: boolean
           habit_id?: string | null
           id?: string
+          must_do?: boolean
           priority?: string | null
           task_id?: string | null
           title: string
@@ -44,6 +48,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          carry_count?: number
           carry_over?: boolean
           category?: string | null
           created_at?: string | null
@@ -51,6 +56,7 @@ export type Database = {
           done?: boolean
           habit_id?: string | null
           id?: string
+          must_do?: boolean
           priority?: string | null
           task_id?: string | null
           title?: string
@@ -146,29 +152,41 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          last_reminder_date: string | null
+          last_reset_date: string | null
+          last_weekly_date: string | null
           name: string | null
           notif_on: boolean | null
           notif_time: string | null
           push_subscription: Json | null
           theme: string | null
+          timezone: string
         }
         Insert: {
           created_at?: string | null
           id: string
+          last_reminder_date?: string | null
+          last_reset_date?: string | null
+          last_weekly_date?: string | null
           name?: string | null
           notif_on?: boolean | null
           notif_time?: string | null
           push_subscription?: Json | null
           theme?: string | null
+          timezone?: string
         }
         Update: {
           created_at?: string | null
           id?: string
+          last_reminder_date?: string | null
+          last_reset_date?: string | null
+          last_weekly_date?: string | null
           name?: string | null
           notif_on?: boolean | null
           notif_time?: string | null
           push_subscription?: Json | null
           theme?: string | null
+          timezone?: string
         }
         Relationships: []
       }
@@ -176,10 +194,13 @@ export type Database = {
         Row: {
           auto_escalate: boolean
           category: string
+          completed_at: string | null
           created_at: string | null
           description: string | null
           due_date: string | null
+          due_time: string | null
           energy_level: string | null
+          estimate_min: number | null
           id: string
           is_overdue: boolean
           pin_to_today: boolean
@@ -193,10 +214,13 @@ export type Database = {
         Insert: {
           auto_escalate?: boolean
           category?: string
+          completed_at?: string | null
           created_at?: string | null
           description?: string | null
           due_date?: string | null
+          due_time?: string | null
           energy_level?: string | null
+          estimate_min?: number | null
           id?: string
           is_overdue?: boolean
           pin_to_today?: boolean
@@ -210,10 +234,13 @@ export type Database = {
         Update: {
           auto_escalate?: boolean
           category?: string
+          completed_at?: string | null
           created_at?: string | null
           description?: string | null
           due_date?: string | null
+          due_time?: string | null
           energy_level?: string | null
+          estimate_min?: number | null
           id?: string
           is_overdue?: boolean
           pin_to_today?: boolean
@@ -229,8 +256,13 @@ export type Database = {
       weekly_reviews: {
         Row: {
           blockers: string | null
+          carried_over_count: number | null
           completion_rate: number | null
           created_at: string | null
+          focus_minutes: number | null
+          habit_completion_rate: number | null
+          habits_done: number | null
+          habits_due: number | null
           id: string
           next_priorities: string | null
           tasks_completed: number | null
@@ -242,8 +274,13 @@ export type Database = {
         }
         Insert: {
           blockers?: string | null
+          carried_over_count?: number | null
           completion_rate?: number | null
           created_at?: string | null
+          focus_minutes?: number | null
+          habit_completion_rate?: number | null
+          habits_done?: number | null
+          habits_due?: number | null
           id?: string
           next_priorities?: string | null
           tasks_completed?: number | null
@@ -255,8 +292,13 @@ export type Database = {
         }
         Update: {
           blockers?: string | null
+          carried_over_count?: number | null
           completion_rate?: number | null
           created_at?: string | null
+          focus_minutes?: number | null
+          habit_completion_rate?: number | null
+          habits_done?: number | null
+          habits_due?: number | null
           id?: string
           next_priorities?: string | null
           tasks_completed?: number | null

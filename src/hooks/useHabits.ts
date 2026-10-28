@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { todayLocal, addDaysLocal } from '../lib/dates'
+import type { DailyTodo } from '../types'
 import toast from 'react-hot-toast'
 
 export interface Habit {
@@ -47,9 +49,7 @@ export function useHabits() {
 /** Fetch habit logs for the last N days */
 export function useHabitLogs(days = 30) {
   const { user } = useAuth()
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - days)
-  const startStr = startDate.toISOString().split('T')[0]
+  const startStr = addDaysLocal(todayLocal(), -days)
 
   return useQuery({
     queryKey: ['habit_logs', user?.id, days],
@@ -68,27 +68,33 @@ export function useHabitLogs(days = 30) {
   })
 }
 
-/** Create a new habit */
+/** Create a new habit (idempotent with client-generated UUID) */
 export function useCreateHabit() {
   const qc = useQueryClient()
   const { user } = useAuth()
 
   return useMutation({
     mutationFn: async (habit: {
+      id?: string
       name: string
       icon: string
       frequency: string
       custom_days?: string[]
     }) => {
+      const id = habit.id || crypto.randomUUID()
       const { data, error } = await supabase
         .from('habits')
-        .insert({
-          user_id: user!.id,
-          name: habit.name,
-          icon: habit.icon,
-          frequency: habit.frequency,
-          custom_days: habit.custom_days || [],
-        })
+        .upsert(
+          {
+            id,
+            user_id: user!.id,
+            name: habit.name,
+            icon: habit.icon,
+            frequency: habit.frequency,
+            custom_days: habit.custom_days || [],
+          },
+          { ignoreDuplicates: true }
+        )
         .select()
         .single()
 
@@ -97,7 +103,6 @@ export function useCreateHabit() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['habits'] })
-      toast.success('Habit created!')
     },
     onError: () => {
       toast.error('Failed to create habit')
@@ -123,7 +128,6 @@ export function useUpdateHabit() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['habits'] })
-      toast.success('Habit updated')
     },
     onError: () => {
       toast.error('Failed to update')
@@ -180,6 +184,14 @@ export function useToggleHabitLog() {
       )
 
       if (error) throw error
+
+      // Bidirectional sync: update matching daily_todos
+      await supabase
+        .from('daily_todos')
+        .update({ done: completed })
+        .eq('user_id', user!.id)
+        .eq('habit_id', habitId)
+        .eq('date', date)
     },
     onMutate: async ({ habitId, date, completed }) => {
       const key = ['habit_logs', user?.id, 30]
@@ -207,6 +219,13 @@ export function useToggleHabitLog() {
             completed,
           },
         ]
+      })
+
+      // Optimistic update for daily_todos cache if active for this date
+      const dailyKey = ['daily_todos', user?.id, date]
+      qc.setQueryData<DailyTodo[]>(dailyKey, (old) => {
+        if (!old) return old
+        return old.map((t) => (t.habit_id === habitId ? { ...t, done: completed } : t))
       })
 
       return { prev }

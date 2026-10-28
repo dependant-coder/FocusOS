@@ -13,6 +13,9 @@ import {
   useDeleteHabit,
 } from '../hooks/useHabits'
 import { Check, TrendingUp } from 'lucide-react'
+import { todayLocal } from '../lib/dates'
+
+import { isHabitDue, completionRate } from '../lib/habits'
 
 export default function Habits() {
   const { data: habits = [], isLoading } = useHabits()
@@ -22,22 +25,27 @@ export default function Habits() {
   const deleteHabit = useDeleteHabit()
   const [showForm, setShowForm] = useState(false)
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = todayLocal()
 
-  // Today's completion stats
-  const todayLogs = logs.filter((l) => l.date === todayStr)
-  const todayDone = todayLogs.filter((l) => l.completed).length
-  const todayTotal = habits.length
+  // Today's completion stats (due habits only)
+  const dueHabits = habits.filter((h) => isHabitDue(h, todayStr))
+  const todayTotal = dueHabits.length
+  const todayDone = dueHabits.filter((h) =>
+    logs.some((l) => l.habit_id === h.id && l.date === todayStr && l.completed)
+  ).length
 
-  // Monthly completion rate
-  const thisMonth = new Date().toISOString().slice(0, 7)
-  const monthLogs = logs.filter(
-    (l) => l.date.startsWith(thisMonth) && l.completed
-  )
-  const monthRate =
-    habits.length > 0
-      ? Math.round((monthLogs.length / (habits.length * new Date().getDate())) * 100)
-      : 0
+  // Monthly completion rate over due days only
+  const monthStart = `${todayStr.slice(0, 7)}-01`
+  let monthRate = 0
+  if (habits.length > 0) {
+    const rates = habits.map((h) => {
+      const hCompletedDates = logs
+        .filter((l) => l.habit_id === h.id && l.completed)
+        .map((l) => l.date)
+      return completionRate(h, hCompletedDates, monthStart, todayStr)
+    })
+    monthRate = Math.round(rates.reduce((acc, r) => acc + r, 0) / habits.length)
+  }
 
   return (
     <PageShell title="Habits">
@@ -124,7 +132,7 @@ export default function Habits() {
                     toggleLog.mutate({ habitId, date, completed })
                   }
                   onDelete={(id) => deleteHabit.mutate(id)}
-                  isToggling={toggleLog.isPending}
+                  isToggling={toggleLog.isPending && toggleLog.variables?.habitId === habit.id}
                 />
               )
             })}

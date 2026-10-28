@@ -37,7 +37,7 @@ export function ReflectionForm({ review }: { review: WeeklyReview }) {
           onChange={(e) => setWins(e.target.value)}
           onBlur={(e) => handleBlur('wins', e.target.value)}
           placeholder="What went well?"
-          className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm p-3 focus:ring-2 focus:ring-brand-500 resize-none h-24 text-gray-900 dark:text-white"
+          className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-base sm:text-sm p-3 focus:ring-2 focus:ring-brand-500 resize-none h-24 text-gray-900 dark:text-white"
         />
       </div>
 
@@ -48,7 +48,7 @@ export function ReflectionForm({ review }: { review: WeeklyReview }) {
           onChange={(e) => setBlockers(e.target.value)}
           onBlur={(e) => handleBlur('blockers', e.target.value)}
           placeholder="What held you back?"
-          className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm p-3 focus:ring-2 focus:ring-brand-500 resize-none h-24 text-gray-900 dark:text-white"
+          className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-base sm:text-sm p-3 focus:ring-2 focus:ring-brand-500 resize-none h-24 text-gray-900 dark:text-white"
         />
       </div>
 
@@ -59,7 +59,7 @@ export function ReflectionForm({ review }: { review: WeeklyReview }) {
           onChange={(e) => setNextPriorities(e.target.value)}
           onBlur={(e) => handleBlur('nextPriorities', e.target.value)}
           placeholder="Top 3 things to focus on..."
-          className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm p-3 focus:ring-2 focus:ring-brand-500 resize-none h-24 text-gray-900 dark:text-white"
+          className="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-base sm:text-sm p-3 focus:ring-2 focus:ring-brand-500 resize-none h-24 text-gray-900 dark:text-white"
         />
       </div>
     </motion.div>

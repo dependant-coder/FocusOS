@@ -41,13 +41,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               borderRadius: '12px',
               fontSize: '14px',
               fontWeight: 500,
-              padding: '12px 16px',
+              padding: '10px 16px',
+              background: '#111827',
+              color: '#f9fafb',
+              border: '1px solid #374151',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3)',
             },
             success: {
-              iconTheme: { primary: '#10b981', secondary: '#fff' },
+              iconTheme: { primary: '#10b981', secondary: '#111827' },
             },
             error: {
-              iconTheme: { primary: '#ef4444', secondary: '#fff' },
+              iconTheme: { primary: '#ef4444', secondary: '#111827' },
             },
           }}
         />

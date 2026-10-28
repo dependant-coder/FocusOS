@@ -1,3 +1,5 @@
+import { todayLocal, addDaysLocal } from '../../lib/dates'
+
 interface StreakDotsProps {
   /** Dates on which the habit was completed (YYYY-MM-DD format) */
   completedDates: string[]
@@ -6,16 +8,15 @@ interface StreakDotsProps {
 }
 
 export default function StreakDots({ completedDates, days = 7 }: StreakDotsProps) {
-  const today = new Date()
+  const todayStr = todayLocal()
   const completedSet = new Set(completedDates)
 
   const dots = Array.from({ length: days }, (_, i) => {
-    const d = new Date(today)
-    d.setDate(today.getDate() - (days - 1 - i))
-    const dateStr = d.toISOString().split('T')[0]
-    const isFuture = d > today
+    const offset = -(days - 1 - i)
+    const dateStr = addDaysLocal(todayStr, offset)
+    const isFuture = offset > 0
     const isCompleted = completedSet.has(dateStr)
-    const isToday = dateStr === today.toISOString().split('T')[0]
+    const isToday = dateStr === todayStr
 
     return { dateStr, isFuture, isCompleted, isToday }
   })

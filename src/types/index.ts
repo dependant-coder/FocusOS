@@ -1,7 +1,7 @@
 import type { Database } from './database.types'
 
-// Row types extracted from Database for convenience
 export type Profile = Database['public']['Tables']['profiles']['Row']
+export type ProfileUpdate = Database['public']['Tables']['profiles']['Update']
 export type Task = Database['public']['Tables']['tasks']['Row']
 export type TaskInsert = Database['public']['Tables']['tasks']['Insert']
 export type TaskUpdate = Database['public']['Tables']['tasks']['Update']

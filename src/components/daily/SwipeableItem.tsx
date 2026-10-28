@@ -1,5 +1,5 @@
 import { motion, useMotionValue, useTransform } from 'framer-motion'
-import { RiCheckLine, RiDeleteBinLine } from 'react-icons/ri'
+import { Check, Trash2 } from 'lucide-react'
 
 interface SwipeableItemProps {
   onComplete: () => void
@@ -30,10 +30,10 @@ export function SwipeableItem({ onComplete, onDelete, children }: SwipeableItemP
         style={{ background }}
       >
         <motion.div style={{ opacity: leftOpacity }}>
-          <RiCheckLine className="text-white text-xl" />
+          <Check className="text-white w-5 h-5" />
         </motion.div>
         <motion.div style={{ opacity: rightOpacity }}>
-          <RiDeleteBinLine className="text-white text-xl" />
+          <Trash2 className="text-white w-5 h-5" />
         </motion.div>
       </motion.div>
 

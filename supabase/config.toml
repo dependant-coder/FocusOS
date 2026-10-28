@@ -1,0 +1,7 @@
+project_id = "otmobyfcckxdoxkoohzl"
+
+[functions.daily-reset]
+verify_jwt = false
+
+[functions.weekly-review]
+verify_jwt = false

@@ -1,5 +1,6 @@
 import type { Config } from 'tailwindcss'
 import forms from '@tailwindcss/forms'
+import plugin from 'tailwindcss/plugin'
 
 const config: Config = {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
@@ -23,10 +24,6 @@ const config: Config = {
           900: '#312e81',
         },
       },
-      spacing: {
-        'safe-bottom': 'env(safe-area-inset-bottom, 0px)',
-        'safe-top': 'env(safe-area-inset-top, 0px)',
-      },
       animation: {
         'slide-up': 'slideUp 0.3s ease-out',
         'fade-in': 'fadeIn 0.2s ease-out',
@@ -43,7 +40,17 @@ const config: Config = {
       },
     },
   },
-  plugins: [forms],
+  plugins: [
+    forms,
+    plugin(({ addUtilities }) => {
+      addUtilities({
+        '.pt-safe': { paddingTop: 'env(safe-area-inset-top, 0px)' },
+        '.pb-safe': { paddingBottom: 'env(safe-area-inset-bottom, 0px)' },
+        '.pl-safe': { paddingLeft: 'env(safe-area-inset-left, 0px)' },
+        '.pr-safe': { paddingRight: 'env(safe-area-inset-right, 0px)' },
+      })
+    }),
+  ],
 }
 
 export default config

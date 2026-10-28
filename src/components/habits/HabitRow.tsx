@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion'
-import { Check, MoreVertical, Trash2 } from 'lucide-react'
+import { Check, Minus, MoreVertical, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import type { Habit, HabitLog } from '../../hooks/useHabits'
 import StreakDots from './StreakDots'
+import { todayLocal } from '../../lib/dates'
+import { isHabitDue, currentStreak } from '../../lib/habits'
 
 interface HabitRowProps {
   habit: Habit
@@ -22,11 +24,14 @@ export default function HabitRow({
   isToggling,
 }: HabitRowProps) {
   const [showMenu, setShowMenu] = useState(false)
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = todayLocal()
+  const isDue = isHabitDue(habit, todayStr)
   const isDone = todayLog?.completed ?? false
   const completedDates = recentLogs
     .filter((l) => l.completed)
     .map((l) => l.date)
+
+  const { streak, graceUsed } = currentStreak(habit, completedDates, todayStr)
 
   const frequencyLabel = {
     daily: 'Every day',
@@ -42,9 +47,11 @@ export default function HabitRow({
       animate={{ opacity: 1, y: 0 }}
       className={`
         relative bg-white dark:bg-gray-900 rounded-xl border
-        ${isDone
-          ? 'border-emerald-200/60 dark:border-emerald-500/15'
-          : 'border-gray-200/60 dark:border-gray-800/60'
+        ${!isDue
+          ? 'border-gray-100 dark:border-gray-800/40 opacity-75'
+          : isDone
+            ? 'border-emerald-200/60 dark:border-emerald-500/15'
+            : 'border-gray-200/60 dark:border-gray-800/60'
         }
         shadow-sm transition-all
       `}
@@ -52,17 +59,34 @@ export default function HabitRow({
       <div className="flex items-center gap-3 p-3.5">
         {/* Checkbox */}
         <button
-          onClick={() => onToggle(habit.id, todayStr, !isDone)}
-          disabled={isToggling}
+          onClick={() => {
+            if (isDue) {
+              onToggle(habit.id, todayStr, !isDone)
+            }
+          }}
+          disabled={!isDue || isToggling}
+          aria-label={
+            !isDue
+              ? `${habit.name} (Not scheduled today)`
+              : isDone
+                ? `Mark ${habit.name} incomplete`
+                : `Mark ${habit.name} complete`
+          }
           className={`
             shrink-0 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all
-            ${isDone
-              ? 'bg-emerald-500 border-emerald-500 text-white'
-              : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400'
+            ${!isDue
+              ? 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/40 text-gray-300 dark:text-gray-600 cursor-not-allowed'
+              : isDone
+                ? 'bg-emerald-500 border-emerald-500 text-white'
+                : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400'
             }
           `}
         >
-          {isDone && <Check size={14} strokeWidth={3} />}
+          {!isDue ? (
+            <Minus size={12} strokeWidth={2.5} />
+          ) : (
+            isDone && <Check size={14} strokeWidth={3} />
+          )}
         </button>
 
         {/* Content */}
@@ -71,18 +95,39 @@ export default function HabitRow({
             <span className="text-base">{habit.icon}</span>
             <p
               className={`text-sm font-medium ${
-                isDone
-                  ? 'line-through text-gray-400 dark:text-gray-600'
-                  : 'text-gray-900 dark:text-white'
+                !isDue
+                  ? 'text-gray-500 dark:text-gray-400'
+                  : isDone
+                    ? 'line-through text-gray-400 dark:text-gray-600'
+                    : 'text-gray-900 dark:text-white'
               }`}
             >
               {habit.name}
             </p>
+            {!isDue && (
+              <span className="text-[10px] font-medium text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                Not scheduled today
+              </span>
+            )}
           </div>
-          <div className="flex items-center justify-between mt-1.5">
-            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
-              {frequencyLabel}
-            </span>
+          <div className="flex items-center justify-between mt-1.5 gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+                {frequencyLabel}
+              </span>
+              {streak > 0 ? (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200/60 dark:border-amber-800/40">
+                  🔥 {streak}
+                  {graceUsed > 0 && (
+                    <span className="text-[9px] text-amber-500" title="Grace active">
+                      ✦
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="text-[10px] text-gray-400">0 streak</span>
+              )}
+            </div>
             <StreakDots completedDates={completedDates} />
           </div>
         </div>
@@ -91,6 +136,7 @@ export default function HabitRow({
         <div className="relative">
           <button
             onClick={() => setShowMenu(!showMenu)}
+            aria-label="Habit options"
             className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
           >
             <MoreVertical size={16} />

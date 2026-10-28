@@ -5,6 +5,7 @@ import { AnimatePresence } from 'framer-motion'
 import { supabase } from './lib/supabase'
 import { useRealtimeSync } from './hooks/useRealtime'
 import { useAuth } from './hooks/useAuth'
+import { useQueryClient } from '@tanstack/react-query'
 
 // Lazy-loaded pages
 const AuthPage = lazy(() => import('./pages/Auth'))
@@ -15,13 +16,14 @@ const Habits = lazy(() => import('./pages/Habits'))
 const Weekly = lazy(() => import('./pages/Weekly'))
 const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
 const Settings = lazy(() => import('./pages/Settings'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 
-import { Toaster } from 'react-hot-toast'
 import { PageTransition } from './components/layout/PageTransition'
+import { ThemeProvider } from './providers/ThemeProvider'
 
 function LoadingScreen() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-white dark:bg-gray-950">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950">
       <div className="text-center">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/25 mb-4 animate-pulse">
           <Crosshair size={24} className="text-white" strokeWidth={2.5} />
@@ -63,6 +65,7 @@ export default function App() {
   const [session, setSession] = useState<AppSession>(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  const qc = useQueryClient()
 
   useEffect(() => {
     // Get initial session
@@ -76,49 +79,60 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session)
-      if (event === 'SIGNED_IN' && session) navigate('/')
-      if (event === 'SIGNED_OUT') navigate('/auth')
+      if (event === 'PASSWORD_RECOVERY') {
+        navigate('/auth/reset')
+      } else if (event === 'SIGNED_IN' && session) {
+        // Only navigate to '/' if currently on an auth page, avoiding bouncing on tab refocus
+        if (window.location.pathname.startsWith('/auth') && window.location.pathname !== '/auth/reset') {
+          navigate('/')
+        }
+      } else if (event === 'SIGNED_OUT') {
+        // Clear React Query cache and local user state on sign out
+        qc.clear()
+        try {
+          localStorage.removeItem('focusos-focus-session')
+        } catch {
+          // ignore storage error
+        }
+        navigate('/auth')
+      }
     })
 
     return () => subscription.unsubscribe()
-  }, [navigate])
+  }, [navigate, qc])
 
   if (loading) {
     return <LoadingScreen />
   }
 
   return (
-    <>
-    <Toaster 
-      position="top-center" 
-      toastOptions={{
-        duration: 2500,
-        style: {
-          borderRadius: '12px',
-          background: '#1f2937',
-          color: '#fff',
-          fontSize: '14px',
-        },
-      }} 
-    />
-    <Routes>
-      <Route
-        path="/auth"
-        element={
-          !session ? (
+    <ThemeProvider>
+      <Routes>
+        <Route
+          path="/auth/reset"
+          element={
             <Suspense fallback={<LoadingScreen />}>
-              <AuthPage />
+              <ResetPassword />
             </Suspense>
-          ) : (
-            <Navigate to="/" replace />
-          )
-        }
-      />
-      <Route
-        path="/*"
-        element={session ? <AppRoutes /> : <Navigate to="/auth" replace />}
-      />
-    </Routes>
-    </>
+          }
+        />
+        <Route
+          path="/auth"
+          element={
+            !session ? (
+              <Suspense fallback={<LoadingScreen />}>
+                <AuthPage />
+              </Suspense>
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+        <Route
+          path="/*"
+          element={session ? <AppRoutes /> : <Navigate to="/auth" replace />}
+        />
+      </Routes>
+    </ThemeProvider>
   )
 }

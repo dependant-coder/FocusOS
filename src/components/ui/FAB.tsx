@@ -13,8 +13,9 @@ export default function FAB({ onClick, label = 'Add' }: FABProps) {
       whileHover={{ scale: 1.05 }}
       onClick={onClick}
       aria-label={label}
+      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5.5rem)' }}
       className="
-        fixed bottom-24 right-5 z-30
+        fixed right-5 z-30
         w-14 h-14 rounded-2xl
         bg-gradient-to-br from-indigo-500 to-purple-600
         text-white shadow-lg shadow-indigo-500/30

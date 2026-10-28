@@ -1,24 +1,26 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useToday } from './useToday'
+import { todayLocal } from '../lib/dates'
 import type { DailyTodo, DailyTodoInsert } from '../types'
+import type { HabitLog } from './useHabits'
 import toast from 'react-hot-toast'
-
-const todayStr = () => new Date().toISOString().split('T')[0]
 
 /** Fetch all daily_todos for today, with joined task details */
 export function useDailyTodos() {
   const { user } = useAuth()
+  const today = useToday()
 
   return useQuery({
-    queryKey: ['daily_todos', user?.id, todayStr()],
+    queryKey: ['daily_todos', user?.id, today],
     enabled: !!user,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('daily_todos')
         .select('*, tasks(description, resources_url)')
         .eq('user_id', user!.id)
-        .eq('date', todayStr())
+        .eq('date', today)
         .order('created_at', { ascending: true })
 
       if (error) throw error
@@ -34,33 +36,76 @@ export function useToggleDailyTodo() {
 
   return useMutation({
     mutationFn: async ({ id, done }: { id: string; done: boolean }) => {
+      const today = todayLocal()
+      const key = ['daily_todos', user?.id, today]
+      const cached = qc.getQueryData<DailyTodo[]>(key)
+      const item = cached?.find((t) => t.id === id)
+
       const { error } = await supabase
         .from('daily_todos')
         .update({ done })
         .eq('id', id)
 
       if (error) throw error
+
+      if (item?.habit_id && user) {
+        await supabase.from('habit_logs').upsert(
+          {
+            habit_id: item.habit_id,
+            user_id: user.id,
+            date: item.date || today,
+            completed: done,
+          },
+          { onConflict: 'habit_id,date' }
+        )
+      }
     },
     onMutate: async ({ id, done }) => {
-      const key = ['daily_todos', user?.id, todayStr()]
+      const today = todayLocal()
+      const key = ['daily_todos', user?.id, today]
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData<DailyTodo[]>(key)
+      const item = prev?.find((t) => t.id === id)
 
       qc.setQueryData<DailyTodo[]>(key, (old) =>
         old?.map((t) => (t.id === id ? { ...t, done } : t))
       )
 
-      return { prev }
+      if (item?.habit_id && user) {
+        const habitId = item.habit_id
+        const habitKey = ['habit_logs', user.id, 30]
+        qc.setQueryData<HabitLog[]>(habitKey, (old = []) => {
+          const exists = old.find((l) => l.habit_id === habitId && l.date === item.date)
+          if (exists) {
+            return old.map((l) =>
+              l.habit_id === habitId && l.date === item.date ? { ...l, completed: done } : l
+            )
+          }
+          return [
+            ...old,
+            {
+              id: crypto.randomUUID(),
+              habit_id: habitId,
+              user_id: user.id,
+              date: item.date || today,
+              completed: done,
+            },
+          ]
+        })
+      }
+
+      return { prev, key }
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) {
-        qc.setQueryData(['daily_todos', user?.id, todayStr()], ctx.prev)
+      if (ctx?.prev && ctx?.key) {
+        qc.setQueryData(ctx.key, ctx.prev)
       }
       toast.error('Failed to update')
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
-      // Also invalidate tasks since the trigger may have updated task status
+      qc.invalidateQueries({ queryKey: ['habit_logs'] })
+      qc.invalidateQueries({ queryKey: ['habits'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
@@ -73,17 +118,19 @@ export function useCreateAdhocTodo() {
 
   return useMutation({
     mutationFn: async (title: string) => {
+      const id = crypto.randomUUID()
       const insert: DailyTodoInsert = {
+        id,
         user_id: user!.id,
         title,
         type: 'adhoc',
         done: false,
-        date: todayStr(),
+        date: todayLocal(),
       }
 
       const { data, error } = await supabase
         .from('daily_todos')
-        .insert(insert)
+        .upsert(insert, { ignoreDuplicates: true })
         .select()
         .single()
 
@@ -92,7 +139,6 @@ export function useCreateAdhocTodo() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
-      toast.success('Added to today!')
     },
     onError: () => {
       toast.error('Failed to add task')
@@ -116,7 +162,6 @@ export function useDeleteDailyTodo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
-      // don't really need a toast for delete, typical UX relies on visual removal
     },
     onError: () => {
       toast.error('Failed to delete')

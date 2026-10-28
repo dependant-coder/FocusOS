@@ -7,25 +7,10 @@ import { useAuth } from '../hooks/useAuth'
 import { useProfile, useUpdateProfile, useExportData } from '../hooks/useSettings'
 import toast from 'react-hot-toast'
 
-type ThemeValue = 'light' | 'dark' | 'system'
+import { useTheme } from '../hooks/useTheme'
+import type { Theme } from '../lib/theme'
 
-function applyTheme(theme: ThemeValue) {
-  const root = document.documentElement
-  if (theme === 'dark') {
-    root.classList.add('dark')
-  } else if (theme === 'light') {
-    root.classList.remove('dark')
-  } else {
-    // system
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
-  }
-}
-
-const THEME_OPTIONS: { value: ThemeValue; label: string; icon: typeof Sun }[] = [
+const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
@@ -36,10 +21,10 @@ export default function Settings() {
   const { data: profile, isLoading } = useProfile()
   const updateProfile = useUpdateProfile()
   const exportData = useExportData()
+  const { theme, setTheme } = useTheme()
 
   const [name, setName] = useState('')
   const [nameEditing, setNameEditing] = useState(false)
-  const [theme, setTheme] = useState<ThemeValue>('system')
   const [notifOn, setNotifOn] = useState(true)
   const [notifTime, setNotifTime] = useState('08:00')
 
@@ -47,20 +32,15 @@ export default function Settings() {
   useEffect(() => {
     if (profile) {
       setName(profile.name || '')
-      setTheme(profile.theme || 'system')
       setNotifOn(profile.notif_on ?? true)
       setNotifTime(profile.notif_time?.slice(0, 5) || '08:00')
     }
   }, [profile])
 
   // Handle theme change
-  const handleThemeChange = useCallback((newTheme: ThemeValue) => {
+  const handleThemeChange = useCallback((newTheme: Theme) => {
     setTheme(newTheme)
-    applyTheme(newTheme)
-    updateProfile.mutate({ theme: newTheme }, {
-      onSuccess: () => toast.success(`Theme set to ${newTheme}`)
-    })
-  }, [updateProfile])
+  }, [setTheme])
 
   // Handle name save
   const handleNameSave = useCallback(() => {
@@ -150,7 +130,7 @@ export default function Settings() {
                     onBlur={handleNameSave}
                     onKeyDown={(e) => e.key === 'Enter' && handleNameSave()}
                     autoFocus
-                    className="text-sm font-medium text-gray-900 dark:text-white bg-transparent border-b border-indigo-500 focus:outline-none py-0.5 w-full"
+                    className="text-base sm:text-sm font-medium text-gray-900 dark:text-white bg-transparent border-b border-indigo-500 focus:outline-none py-0.5 w-full"
                   />
                 ) : (
                   <button
@@ -249,7 +229,7 @@ export default function Settings() {
                   type="time"
                   value={notifTime}
                   onChange={(e) => handleNotifTimeChange(e.target.value)}
-                  className="text-sm font-medium text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-1.5 border-0 focus:ring-2 focus:ring-indigo-500"
+                  className="text-base sm:text-sm font-medium text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-1.5 border-0 focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
             </>

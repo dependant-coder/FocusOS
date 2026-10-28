@@ -43,7 +43,14 @@ export default function DailyTodoCard({ todo, onToggle, onDelete }: Omit<DailyTo
             <CheckboxRing
               checked={todo.done}
               onChange={(checked) => onToggle(todo.id, checked)}
-              priority={todo.priority as any}
+              priority={
+                todo.priority === 'critical' ||
+                todo.priority === 'high' ||
+                todo.priority === 'medium' ||
+                todo.priority === 'low'
+                  ? todo.priority
+                  : 'medium'
+              }
             />
           </div>
 

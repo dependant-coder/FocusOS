@@ -93,15 +93,6 @@
   .badge {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium;
   }
-
-  /* Safe area padding for iOS */
-  .safe-top {
-    padding-top: env(safe-area-inset-top, 0px);
-  }
-
-  .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
 }
 
 @layer utilities {

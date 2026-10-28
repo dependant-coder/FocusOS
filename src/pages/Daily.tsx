@@ -1,19 +1,17 @@
+import { useRef } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import PageShell from '../components/layout/PageShell'
 import DailyTodoCard from '../components/daily/DailyTodoCard'
 import { DailyProgressHeader } from '../components/daily/DailyProgressHeader'
 import { EmptyState } from '../components/ui/EmptyState'
 import { MorningBanner } from '../components/daily/MorningBanner'
-import { QuickAddBar } from '../components/daily/QuickAddBar'
+import { QuickAddBar, type QuickAddBarHandle } from '../components/daily/QuickAddBar'
 import { useAuth } from '../hooks/useAuth'
 
 import { DailySkeleton } from '../components/ui/Skeleton'
 import { useDailyTodos, useToggleDailyTodo, useDeleteDailyTodo } from '../hooks/useDailyTodos'
 import { PRIORITY_ORDER } from '../lib/constants'
-import {
-  Crosshair, Leaf, ListChecks,
-  RefreshCw
-} from 'lucide-react'
+import { Crosshair, Leaf, ListChecks, RefreshCw } from 'lucide-react'
 import type { DailyTodo } from '../types'
 
 export default function Daily() {
@@ -21,6 +19,7 @@ export default function Daily() {
   const { data: rawTodos = [], isLoading } = useDailyTodos()
   const toggleTodo = useToggleDailyTodo()
   const deleteTodo = useDeleteDailyTodo()
+  const quickAddRef = useRef<QuickAddBarHandle>(null)
 
   // Split todos into sections
   const todos = rawTodos as (DailyTodo & { tasks?: { description: string | null; resources_url: string | null } | null })[]
@@ -42,8 +41,6 @@ export default function Daily() {
   // Today's info
   const now = new Date()
 
-
-
   return (
     <PageShell title="Daily">
       <DailyProgressHeader completed={doneCount} total={totalCount} date={now} />
@@ -60,12 +57,22 @@ export default function Daily() {
         </div>
       )}
 
+      {/* Quick Add Bar — Always available at the top directly under header */}
+      <div className="px-4 mb-4">
+        <QuickAddBar ref={quickAddRef} />
+      </div>
+
       {/* Content */}
       {isLoading ? (
         <DailySkeleton />
       ) : totalCount === 0 ? (
         <EmptyState
           variant="daily"
+          onAction={() => quickAddRef.current?.focus()}
+          secondaryAction={{
+            label: 'Pick from Tasks',
+            href: '/vault',
+          }}
         />
       ) : (
         <div className="px-4 pb-32 space-y-6">
@@ -123,39 +130,33 @@ export default function Daily() {
             </section>
           )}
 
-          {/* Section: Ad-hoc */}
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <ListChecks size={15} className="text-gray-400" />
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                Quick Tasks
-              </h3>
-              {adhocs.length > 0 && (
+          {/* Section: Quick Tasks */}
+          {adhocs.length > 0 && (
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <ListChecks size={15} className="text-gray-400" />
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                  Quick Tasks
+                </h3>
                 <span className="text-[10px] text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full font-medium">
                   {adhocs.filter((t) => t.done).length}/{adhocs.length}
                 </span>
-              )}
-            </div>
+              </div>
 
-            {/* Existing ad-hoc items */}
-            <div className="space-y-2">
-              <AnimatePresence>
-                {adhocs.map((todo) => (
-                  <DailyTodoCard
-                    key={todo.id}
-                    todo={todo}
-                    onToggle={(id, done) => toggleTodo.mutate({ id, done })}
-                    onDelete={(id) => deleteTodo.mutate(id)}
-                  />
-                ))}
-              </AnimatePresence>
-            </div>
-
-            {/* Quick Add Bar */}
-            <div className="mt-2 -mx-4">
-              <QuickAddBar />
-            </div>
-          </section>
+              <div className="space-y-2">
+                <AnimatePresence>
+                  {adhocs.map((todo) => (
+                    <DailyTodoCard
+                      key={todo.id}
+                      todo={todo}
+                      onToggle={(id, done) => toggleTodo.mutate({ id, done })}
+                      onDelete={(id) => deleteTodo.mutate(id)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+            </section>
+          )}
         </div>
       )}
     </PageShell>

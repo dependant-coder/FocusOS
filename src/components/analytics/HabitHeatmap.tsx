@@ -21,9 +21,9 @@ export function HabitHeatmap() {
     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-x-auto">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Habit Consistency (30 Days)</h3>
       <div className="min-w-[500px]">
-        {habits.map((habit, index) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const Icon = ((Icons as any)[habit.icon || 'Circle'] || Icons.Circle) as React.ElementType
+        {habits.map((habit, habitIdx) => {
+          const iconMap = Icons as unknown as Record<string, React.ElementType>
+          const Icon = iconMap[habit.icon || 'Circle'] || Icons.Circle
           return (
             <div key={habit.id} className="flex items-center gap-4 mb-3 last:mb-0">
               <div className="flex items-center gap-2 w-32 flex-shrink-0">
@@ -36,7 +36,7 @@ export function HabitHeatmap() {
                     key={day.date}
                     initial={{ opacity: 0, scale: 0.5 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.01 + index * 0.1 }}
+                    transition={{ delay: i * 0.01 + habitIdx * 0.1 }}
                     className={`w-3 h-3 rounded-sm ${
                       day.completed ? 'bg-indigo-500' : 'bg-gray-100 dark:bg-gray-700'
                     }`}

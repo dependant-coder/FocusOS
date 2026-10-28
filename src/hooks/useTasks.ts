@@ -4,14 +4,20 @@ import type { Task, TaskInsert, TaskUpdate, TaskFilters } from '../types'
 import { PRIORITY_ORDER } from '../lib/constants'
 import toast from 'react-hot-toast'
 
+import { useAuth } from './useAuth'
+
 // Fetch all tasks with optional filters
 export function useTasks(filters?: TaskFilters) {
+  const { user } = useAuth()
+
   return useQuery({
-    queryKey: ['tasks', filters],
+    queryKey: ['tasks', user?.id, filters],
+    enabled: !!user,
     queryFn: async () => {
       let q = supabase
         .from('tasks')
         .select('*')
+        .eq('user_id', user!.id)
         .order('created_at', { ascending: false })
 
       if (filters?.category) q = q.eq('category', filters.category)
@@ -32,7 +38,7 @@ export function useTasks(filters?: TaskFilters) {
   })
 }
 
-// Create a new task
+// Create a new task (idempotent with client-generated UUID)
 export function useCreateTask() {
   const qc = useQueryClient()
   return useMutation({
@@ -40,16 +46,16 @@ export function useCreateTask() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
+      const id = task.id || crypto.randomUUID()
       const { data, error } = await supabase
         .from('tasks')
-        .insert({ ...task, user_id: user.id })
+        .upsert({ ...task, id, user_id: user.id }, { ignoreDuplicates: true })
         .select()
         .single()
       if (error) throw error
       return data
     },
     onSuccess: () => {
-      toast.success('Task created!')
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
     onError: (err) => {
@@ -73,7 +79,6 @@ export function useUpdateTask() {
       return data
     },
     onSuccess: () => {
-      toast.success('Task updated!')
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
     onError: (err) => {
@@ -114,23 +119,26 @@ export function usePinTask() {
     onMutate: async ({ id, pinned }) => {
       await qc.cancelQueries({ queryKey: ['tasks'] })
 
-      const previousTasks = qc.getQueryData(['tasks', undefined])
+      const previousQueries = qc.getQueriesData<Task[]>({ queryKey: ['tasks'] })
 
-      qc.setQueryData(['tasks', undefined], (old: Task[] = []) =>
-        old.map(t => t.id === id ? { ...t, pin_to_today: pinned } : t)
-      )
+      qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => {
+        if (!old) return old
+        return old.map((t) => (t.id === id ? { ...t, pin_to_today: pinned } : t))
+      })
 
-      return { previousTasks }
+      return { previousQueries }
     },
     onError: (_err, _vars, context) => {
-      if (context?.previousTasks) {
-        qc.setQueryData(['tasks', undefined], context.previousTasks)
+      if (context?.previousQueries) {
+        context.previousQueries.forEach(([queryKey, data]) => {
+          qc.setQueryData(queryKey, data)
+        })
       }
       toast.error('Failed to update pin')
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
-      qc.invalidateQueries({ queryKey: ['daily'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
   })
 }

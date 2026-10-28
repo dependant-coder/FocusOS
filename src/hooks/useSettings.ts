@@ -1,12 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { todayLocal } from '../lib/dates'
+import type { ProfileUpdate } from '../types'
 import toast from 'react-hot-toast'
 
-interface Profile {
+export interface Profile {
   id: string
   name: string | null
   theme: 'light' | 'dark' | 'system'
+  timezone?: string | null
   notif_on: boolean
   notif_time: string
   push_subscription: unknown | null
@@ -26,7 +29,20 @@ export function useProfile() {
         .eq('id', user!.id)
         .single()
       if (error) throw error
-      return data as Profile
+      const profile = data as Profile
+      if (profile && (!profile.timezone || profile.timezone === 'UTC')) {
+        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+        if (browserTz && browserTz !== 'UTC') {
+          profile.timezone = browserTz
+          // Update silently in background
+          supabase
+            .from('profiles')
+            .update({ timezone: browserTz })
+            .eq('id', user!.id)
+            .then(() => {})
+        }
+      }
+      return profile
     },
   })
 }
@@ -36,7 +52,7 @@ export function useUpdateProfile() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (updates: Partial<Pick<Profile, 'name' | 'theme' | 'notif_on' | 'notif_time'>>) => {
+    mutationFn: async (updates: ProfileUpdate) => {
       const { error } = await supabase
         .from('profiles')
         .update(updates)
@@ -59,30 +75,26 @@ export function useExportData() {
     mutationFn: async () => {
       const uid = user!.id
 
-      const [tasks, dailyTodos, habits, habitLogs, weeklyReviews, profile] = await Promise.all([
+      const [tasksRes, habitsRes, habitLogsRes, dailyTodosRes] = await Promise.all([
         supabase.from('tasks').select('*').eq('user_id', uid),
-        supabase.from('daily_todos').select('*').eq('user_id', uid),
         supabase.from('habits').select('*').eq('user_id', uid),
         supabase.from('habit_logs').select('*').eq('user_id', uid),
-        supabase.from('weekly_reviews').select('*').eq('user_id', uid),
-        supabase.from('profiles').select('*').eq('id', uid).single(),
+        supabase.from('daily_todos').select('*').eq('user_id', uid),
       ])
 
       const exportData = {
-        exported_at: new Date().toISOString(),
-        profile: profile.data,
-        tasks: tasks.data || [],
-        daily_todos: dailyTodos.data || [],
-        habits: habits.data || [],
-        habit_logs: habitLogs.data || [],
-        weekly_reviews: weeklyReviews.data || [],
+        exportedAt: new Date().toISOString(),
+        tasks: tasksRes.data ?? [],
+        habits: habitsRes.data ?? [],
+        habitLogs: habitLogsRes.data ?? [],
+        dailyTodos: dailyTodosRes.data ?? [],
       }
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `focusos-export-${new Date().toISOString().split('T')[0]}.json`
+      a.download = `focusos-export-${todayLocal()}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

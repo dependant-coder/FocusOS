@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { subDays, format, eachDayOfInterval } from 'date-fns'
 import { useAuth } from './useAuth'
+import { longestStreak as calculateLongestStreak } from '../lib/habits'
 
 export function useBarChartData() {
   const { user } = useAuth()
@@ -220,36 +221,26 @@ export function useStatCardsData() {
 
       if (habitLogsError) throw habitLogsError
 
+      // Fetch habits to apply frequency-aware longest streak
+      const { data: userHabits } = await supabase
+        .from('habits')
+        .select('id, frequency, custom_days, created_at')
+        .eq('user_id', user.id)
+
+      const habitMap = new Map((userHabits ?? []).map((h) => [h.id, h]))
+
       // Group by habit_id
       const logsByHabit: Record<string, string[]> = {}
-      habitLogs?.forEach(log => {
+      habitLogs?.forEach((log) => {
         if (!logsByHabit[log.habit_id]) logsByHabit[log.habit_id] = []
         logsByHabit[log.habit_id].push(log.date)
       })
 
       let longestStreak = 0
-
-      Object.values(logsByHabit).forEach(dates => {
-        if (dates.length === 0) return
-        
-        let currentStreak = 1
-        let maxStreak = 1
-        
-        for (let i = 1; i < dates.length; i++) {
-          const prevDate = new Date(dates[i-1])
-          const currDate = new Date(dates[i])
-          const diffTime = Math.abs(currDate.getTime() - prevDate.getTime())
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-          
-          if (diffDays === 1) {
-            currentStreak++
-            if (currentStreak > maxStreak) maxStreak = currentStreak
-          } else if (diffDays > 1) {
-            currentStreak = 1
-          }
-        }
-        
-        if (maxStreak > longestStreak) longestStreak = maxStreak
+      Object.entries(logsByHabit).forEach(([habitId, dates]) => {
+        const habit = habitMap.get(habitId) || { frequency: 'daily' }
+        const max = calculateLongestStreak(habit, dates)
+        if (max > longestStreak) longestStreak = max
       })
 
       return {
