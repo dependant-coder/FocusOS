@@ -6,17 +6,14 @@ import {
   getUserDayName,
   addDaysToDateString,
 } from '../_shared/dates.ts'
+import { isAuthorizedCron, unauthorized } from '../_shared/auth.ts'
+
+// Only carry unfinished items from the last N days; older ones are considered abandoned.
+const CARRY_WINDOW_DAYS = 7
 
 // @ts-ignore
 Deno.serve(async (req: any) => {
-  const cronSecret = Deno.env.get('CRON_SECRET')
-  const incomingSecret = req.headers.get('x-cron-secret')
-  if (cronSecret && incomingSecret !== cronSecret) {
-    return new Response(JSON.stringify({ error: 'Unauthorized: invalid cron secret' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
+  if (!isAuthorizedCron(req)) return unauthorized()
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -76,9 +73,10 @@ Deno.serve(async (req: any) => {
       // 1. Carry over: unfinished non-habit todos from prior dates (date < localToday)
       const { data: unresolvedTodos, error: carryError } = await supabase
         .from('daily_todos')
-        .select('*')
+        .select('*, tasks(status)')
         .eq('user_id', uid)
         .lt('date', localToday)
+        .gte('date', addDaysToDateString(localToday, -CARRY_WINDOW_DAYS))
         .eq('done', false)
         .neq('type', 'habit')
         .order('date', { ascending: false })
@@ -89,6 +87,8 @@ Deno.serve(async (req: any) => {
       const seenCarryKeys = new Set<string>()
 
       for (const todo of unresolvedTodos ?? []) {
+        // Never resurrect an item whose underlying task is already done
+        if (todo.tasks?.status === 'done') continue
         if (todo.task_id && (existingTaskIds.has(todo.task_id) || seenCarryKeys.has(`task:${todo.task_id}`))) {
           continue
         }
@@ -124,15 +124,22 @@ Deno.serve(async (req: any) => {
         const adhocCarries = carryBatch.filter((t) => t.task_id === null)
 
         if (taskCarries.length > 0) {
-          await supabase.from('daily_todos').upsert(taskCarries, {
+          const { error } = await supabase.from('daily_todos').upsert(taskCarries, {
             onConflict: 'user_id,task_id,date',
           })
+          if (error) throw error
         }
+        // Ad-hoc rows are protected by a PARTIAL unique index, which PostgREST upsert cannot target.
+        // Plain insert; a unique violation (23505) just means it was already carried, so retry row-by-row.
         if (adhocCarries.length > 0) {
-          await supabase.from('daily_todos').upsert(adhocCarries, {
-            onConflict: 'user_id,date,title',
-            ignoreDuplicates: true,
-          })
+          const { error } = await supabase.from('daily_todos').insert(adhocCarries)
+          if (error) {
+            if (error.code !== '23505') throw error
+            for (const row of adhocCarries) {
+              const { error: rowErr } = await supabase.from('daily_todos').insert(row)
+              if (rowErr && rowErr.code !== '23505') throw rowErr
+            }
+          }
         }
       }
 
@@ -165,9 +172,10 @@ Deno.serve(async (req: any) => {
       }
 
       if (dueBatch.length > 0) {
-        await supabase.from('daily_todos').upsert(dueBatch, {
+        const { error } = await supabase.from('daily_todos').upsert(dueBatch, {
           onConflict: 'user_id,task_id,date',
         })
+        if (error) throw error
       }
 
       // 3. Inject habits matching today's frequency
@@ -214,23 +222,26 @@ Deno.serve(async (req: any) => {
       }
 
       if (habitTodoBatch.length > 0) {
-        await supabase.from('daily_todos').upsert(habitTodoBatch, {
+        const { error } = await supabase.from('daily_todos').upsert(habitTodoBatch, {
           onConflict: 'user_id,habit_id,date',
         })
+        if (error) throw error
       }
 
       if (habitLogBatch.length > 0) {
-        await supabase.from('habit_logs').upsert(habitLogBatch, {
+        const { error } = await supabase.from('habit_logs').upsert(habitLogBatch, {
           onConflict: 'habit_id,date',
           ignoreDuplicates: true,
         })
+        if (error) throw error
       }
 
       // Mark user profile as reset for localToday
-      await supabase
+      const { error: markError } = await supabase
         .from('profiles')
         .update({ last_reset_date: localToday })
         .eq('id', uid)
+      if (markError) throw markError
 
       processed++
     } catch (err: any) {

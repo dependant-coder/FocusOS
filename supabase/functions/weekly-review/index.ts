@@ -9,17 +9,11 @@ import {
   getDaysInWeek,
   computeHabitsDueInWeek,
 } from '../_shared/dates.ts'
+import { isAuthorizedCron, unauthorized } from '../_shared/auth.ts'
 
 // @ts-ignore
 Deno.serve(async (req: any) => {
-  const cronSecret = Deno.env.get('CRON_SECRET')
-  const incomingSecret = req.headers.get('x-cron-secret')
-  if (cronSecret && incomingSecret !== cronSecret) {
-    return new Response(JSON.stringify({ error: 'Unauthorized: invalid cron secret' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
+  if (!isAuthorizedCron(req)) return unauthorized()
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -158,10 +152,11 @@ Deno.serve(async (req: any) => {
       if (upsertError) throw upsertError
 
       // 6. Update user's last_weekly_date to prevent duplicate runs
-      await supabase
+      const { error: markError } = await supabase
         .from('profiles')
         .update({ last_weekly_date: localToday })
         .eq('id', uid)
+      if (markError) throw markError
 
       processed++
     } catch (err: any) {
