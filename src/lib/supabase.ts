@@ -805,40 +805,4 @@ export const supabase: import('@supabase/supabase-js').SupabaseClient<Database> 
     })
   : (createMockSupabaseClient() as unknown as import('@supabase/supabase-js').SupabaseClient<Database>)
 
-/**
- * Convenient login bypass for testing and demo walkthroughs.
- */
-export async function bypassLogin() {
-  localStorage.setItem('focusos_guest_bypass', 'true')
-  if (!hasValidEnv) {
-    return supabase.auth.signInWithPassword({
-      email: 'alex.rivera@focusos.dev',
-      password: 'demo-password-123',
-    })
-  }
 
-  // If real Supabase: try anonymous sign-in or demo credentials
-  try {
-    const anonRes = await supabase.auth.signInAnonymously()
-    if (!anonRes.error && anonRes.data.session) {
-      return anonRes
-    }
-  } catch {
-    // anonymous auth may not be enabled on live project
-  }
-
-  const demoEmail = 'demo@focusos.app'
-  const demoPassword = 'DemoPassword2026!'
-  const signInRes = await supabase.auth.signInWithPassword({
-    email: demoEmail,
-    password: demoPassword,
-  })
-  if (!signInRes.error && signInRes.data.session) {
-    return signInRes
-  }
-
-  return await supabase.auth.signUp({
-    email: demoEmail,
-    password: demoPassword,
-  })
-}

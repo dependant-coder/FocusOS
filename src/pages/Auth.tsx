@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { supabase, bypassLogin } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import { DAILY_QUOTES } from '../lib/constants'
 import { getDayOfYear } from '../lib/dates'
-import { Crosshair, Zap } from 'lucide-react'
+import { Crosshair } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 type AuthMode = 'sign_in' | 'sign_up' | 'forgot_password'
@@ -48,25 +47,7 @@ export default function Auth() {
     }
   }
 
-  const navigate = useNavigate()
 
-  const handleBypassLogin = async () => {
-    setLoading(true)
-    try {
-      const res = await bypassLogin()
-      if (res.error) {
-        toast.error(`Login bypass: ${res.error.message}`)
-      } else {
-        toast.success('Signed in as Demo User')
-        navigate('/')
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to bypass login'
-      toast.error(message)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const handleGoogleAuth = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
@@ -107,16 +88,6 @@ export default function Auth() {
 
         {/* Auth form */}
         <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-6 shadow-xl">
-          {/* Quick Bypass / Demo Mode Button */}
-          <button
-            type="button"
-            onClick={handleBypassLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 hover:text-emerald-200 text-sm font-semibold transition-all shadow-sm mb-4 group"
-          >
-            <Zap size={16} className="text-emerald-400 group-hover:scale-110 transition-transform" />
-            <span>Bypass Login (Guest / Demo Mode)</span>
-          </button>
 
           {/* Google OAuth */}
           <button
