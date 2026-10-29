@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import '@fontsource-variable/inter';
 
 @tailwind base;
 @tailwind components;
@@ -22,7 +22,7 @@
   }
 
   html {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-tap-highlight-color: transparent;
@@ -30,7 +30,6 @@
 
   body {
     @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
-    overscroll-behavior-y: contain;
     overflow-x: hidden;
   }
 

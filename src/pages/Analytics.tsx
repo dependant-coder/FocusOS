@@ -24,8 +24,8 @@ export function Analytics() {
   const { data: lineData } = useLineChartData()
 
   return (
-    <PageShell title="Analytics">
-      <div className="max-w-3xl mx-auto pb-24">
+    <PageShell title="Analytics" size="wide">
+      <div className="w-full pb-12">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

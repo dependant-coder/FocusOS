@@ -161,6 +161,9 @@ export type Database = {
           push_subscription: Json | null
           theme: string | null
           timezone: string
+          weekly_reminder_day: number | null
+          weekly_reminder_on: boolean | null
+          weekly_reminder_time: string | null
         }
         Insert: {
           created_at?: string | null
@@ -174,6 +177,9 @@ export type Database = {
           push_subscription?: Json | null
           theme?: string | null
           timezone?: string
+          weekly_reminder_day?: number | null
+          weekly_reminder_on?: boolean | null
+          weekly_reminder_time?: string | null
         }
         Update: {
           created_at?: string | null
@@ -187,6 +193,39 @@ export type Database = {
           push_subscription?: Json | null
           theme?: string | null
           timezone?: string
+          weekly_reminder_day?: number | null
+          weekly_reminder_on?: boolean | null
+          weekly_reminder_time?: string | null
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          p256dh: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          p256dh: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          p256dh?: string
+          user_agent?: string | null
+          user_id?: string
         }
         Relationships: []
       }

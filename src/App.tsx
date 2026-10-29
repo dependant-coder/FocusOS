@@ -1,25 +1,25 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { MotionConfig } from 'framer-motion'
 import { Crosshair } from 'lucide-react'
-import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
-import { supabase } from './lib/supabase'
-import { useRealtimeSync } from './hooks/useRealtime'
 import { useAuth } from './hooks/useAuth'
-import { useQueryClient } from '@tanstack/react-query'
+import { useRealtimeSync } from './hooks/useRealtime'
+import { ThemeProvider } from './providers/ThemeProvider'
+import { RequireAuth } from './components/auth/RequireAuth'
+import AppLayout from './components/layout/AppLayout'
+import { PageTransition } from './components/layout/PageTransition'
 
 // Lazy-loaded pages
 const AuthPage = lazy(() => import('./pages/Auth'))
+const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const Home = lazy(() => import('./pages/Home'))
 const Vault = lazy(() => import('./pages/Vault'))
 const Daily = lazy(() => import('./pages/Daily'))
 const Habits = lazy(() => import('./pages/Habits'))
 const Weekly = lazy(() => import('./pages/Weekly'))
-const Analytics = lazy(() => import('./pages/Analytics').then(m => ({ default: m.Analytics })))
+const Analytics = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.Analytics })))
 const Settings = lazy(() => import('./pages/Settings'))
-const ResetPassword = lazy(() => import('./pages/ResetPassword'))
-
-import { PageTransition } from './components/layout/PageTransition'
-import { ThemeProvider } from './providers/ThemeProvider'
+const NotFound = lazy(() => import('./pages/NotFound'))
 
 function LoadingScreen() {
   return (
@@ -35,71 +35,16 @@ function LoadingScreen() {
   )
 }
 
-function AppRoutes() {
+function AuthenticatedApp() {
   const { user } = useAuth()
-  const location = useLocation()
-  // Subscribe to Realtime changes for cross-tab/device sync
+  // Subscribe to Realtime postgres changes for active user
   useRealtimeSync(user?.id ?? '')
 
-  return (
-    <Suspense fallback={<LoadingScreen />}>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<PageTransition><Home /></PageTransition>} />
-          <Route path="/daily" element={<PageTransition><Daily /></PageTransition>} />
-          <Route path="/vault" element={<PageTransition><Vault /></PageTransition>} />
-          <Route path="/habits" element={<PageTransition><Habits /></PageTransition>} />
-          <Route path="/weekly" element={<PageTransition><Weekly /></PageTransition>} />
-          <Route path="/analytics" element={<PageTransition><Analytics /></PageTransition>} />
-          <Route path="/settings" element={<PageTransition><Settings /></PageTransition>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
-    </Suspense>
-  )
+  return <AppLayout />
 }
 
-type AppSession = Awaited<ReturnType<typeof supabase.auth.getSession>>['data']['session']
-
 export default function App() {
-  const [session, setSession] = useState<AppSession>(null)
-  const [loading, setLoading] = useState(true)
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setLoading(false)
-    })
-
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session)
-      if (event === 'PASSWORD_RECOVERY') {
-        navigate('/auth/reset')
-      } else if (event === 'SIGNED_IN' && session) {
-        // Only navigate to '/' if currently on an auth page, avoiding bouncing on tab refocus
-        if (window.location.pathname.startsWith('/auth') && window.location.pathname !== '/auth/reset') {
-          navigate('/')
-        }
-      } else if (event === 'SIGNED_OUT') {
-        // Clear React Query cache and local user state on sign out
-        qc.clear()
-        try {
-          localStorage.removeItem('focusos-focus-session')
-        } catch {
-          // ignore storage error
-        }
-        navigate('/auth')
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [navigate, qc])
+  const { user, loading } = useAuth()
 
   if (loading) {
     return <LoadingScreen />
@@ -107,32 +52,39 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <Routes>
-        <Route
-          path="/auth/reset"
-          element={
-            <Suspense fallback={<LoadingScreen />}>
-              <ResetPassword />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/auth"
-          element={
-            !session ? (
-              <Suspense fallback={<LoadingScreen />}>
-                <AuthPage />
-              </Suspense>
-            ) : (
-              <Navigate to="/" replace />
-            )
-          }
-        />
-        <Route
-          path="/*"
-          element={session ? <AppRoutes /> : <Navigate to="/auth" replace />}
-        />
-      </Routes>
+      <MotionConfig reducedMotion="user">
+        <Suspense fallback={<LoadingScreen />}>
+          <Routes>
+            {/* Public Auth Routes */}
+            <Route
+              path="/auth/reset"
+              element={<ResetPassword />}
+            />
+            <Route
+              path="/auth"
+              element={!user ? <AuthPage /> : <Navigate to="/" replace />}
+            />
+
+            {/* Protected App Routes with Persistent Layout */}
+            <Route
+              element={
+                <RequireAuth>
+                  <AuthenticatedApp />
+                </RequireAuth>
+              }
+            >
+              <Route path="/" element={<PageTransition><Home /></PageTransition>} />
+              <Route path="/daily" element={<PageTransition><Daily /></PageTransition>} />
+              <Route path="/vault" element={<PageTransition><Vault /></PageTransition>} />
+              <Route path="/habits" element={<PageTransition><Habits /></PageTransition>} />
+              <Route path="/weekly" element={<PageTransition><Weekly /></PageTransition>} />
+              <Route path="/analytics" element={<PageTransition><Analytics /></PageTransition>} />
+              <Route path="/settings" element={<PageTransition><Settings /></PageTransition>} />
+              <Route path="*" element={<PageTransition><NotFound /></PageTransition>} />
+            </Route>
+          </Routes>
+        </Suspense>
+      </MotionConfig>
     </ThemeProvider>
   )
 }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -11,6 +12,22 @@ import toast from 'react-hot-toast'
 export function useDailyTodos() {
   const { user } = useAuth()
   const today = useToday()
+
+  const qc = useQueryClient()
+
+  // Refetch when app becomes visible if the local date changed
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        const currentDate = todayLocal()
+        if (currentDate !== today) {
+          qc.invalidateQueries({ queryKey: ['daily_todos'] })
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [qc, today])
 
   return useQuery({
     queryKey: ['daily_todos', user?.id, today],

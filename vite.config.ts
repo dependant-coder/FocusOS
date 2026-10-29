@@ -12,33 +12,73 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      registerType: 'prompt',
+      injectRegister: false,
       devOptions: {
-        enabled: true
+        enabled: process.env.ENABLE_PWA_DEV === 'true',
+      },
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
       manifest: {
-        name: 'FocusOS Tasks',
+        id: '/',
+        name: 'FocusOS — Command Center',
         short_name: 'FocusOS',
-        description: 'A productivity command center for tasks and habits.',
-        theme_color: '#6366f1',
-        background_color: '#f8fafc',
+        description: 'Your daily command center built for college life.',
+        start_url: '/?source=pwa',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
+        theme_color: '#4f46e5',
+        background_color: '#030712',
+        categories: ['productivity', 'education'],
         icons: [
           {
             src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
+            purpose: 'any',
           },
           {
             src: '/pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
-          }
-        ]
-      }
-    })
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
+          },
+        ],
+        shortcuts: [
+          {
+            name: 'Quick Capture',
+            short_name: 'Add Task',
+            url: '/?capture=1',
+            icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+          },
+          {
+            name: 'Today View',
+            short_name: 'Today',
+            url: '/daily',
+            icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+          },
+        ],
+        share_target: {
+          action: '/?share=1',
+          method: 'GET',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+          },
+        },
+      },
+    }),
   ],
 })

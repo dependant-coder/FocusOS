@@ -2,19 +2,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { todayLocal } from '../lib/dates'
-import type { ProfileUpdate } from '../types'
+import type { Profile, ProfileUpdate } from '../types'
 import toast from 'react-hot-toast'
-
-export interface Profile {
-  id: string
-  name: string | null
-  theme: 'light' | 'dark' | 'system'
-  timezone?: string | null
-  notif_on: boolean
-  notif_time: string
-  push_subscription: unknown | null
-  created_at: string
-}
 
 export function useProfile() {
   const { user } = useAuth()

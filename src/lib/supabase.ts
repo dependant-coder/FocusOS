@@ -4,6 +4,8 @@ import { todayLocal, localDateString, addDaysLocal } from './dates'
 
 const rawSupabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const rawSupabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const useMock = import.meta.env.VITE_USE_MOCK === 'true'
+const isProd = import.meta.env.PROD
 
 const hasValidEnv = Boolean(
   rawSupabaseUrl &&
@@ -11,6 +13,19 @@ const hasValidEnv = Boolean(
   !rawSupabaseUrl.includes('placeholder') &&
   rawSupabaseUrl.startsWith('http')
 )
+
+if (!hasValidEnv) {
+  if (isProd && !useMock) {
+    throw new Error(
+      '[FocusOS Fatal Error] Missing required Supabase environment variables (VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY). In production builds, real credentials are required unless explicitly opted into mock mode via VITE_USE_MOCK=true.'
+    )
+  }
+  if (!useMock) {
+    console.warn(
+      '[FocusOS] Warning: Supabase credentials are missing and VITE_USE_MOCK is not "true". Falling back to mock client in non-production environment. Set VITE_USE_MOCK=true in .env to explicitly enable mock mode.'
+    )
+  }
+}
 
 // In-memory + localStorage Mock Client for AI Studio standalone execution
 function createMockSupabaseClient() {
@@ -360,6 +375,9 @@ function createMockSupabaseClient() {
       last_reset_date: null,
       last_weekly_date: null,
       last_reminder_date: null,
+      weekly_reminder_day: 0,
+      weekly_reminder_on: true,
+      weekly_reminder_time: '18:00:00',
       created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
     }
 
