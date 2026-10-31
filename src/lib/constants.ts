@@ -122,3 +122,17 @@ export const STATUS_LABELS = {
 export type Priority = keyof typeof PRIORITY_COLORS
 export type Category = keyof typeof CATEGORY_COLORS
 export type TaskStatus = keyof typeof STATUS_LABELS
+
+// Chart palette unified with category and priority colors
+export const CHART_COLORS = {
+  primary: '#4f46e5',
+  secondary: '#06b6d4',
+  college: '#3b82f6',
+  personal: '#a855f7',
+  skill: '#f59e0b',
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#22c55e',
+  palette: ['#3b82f6', '#a855f7', '#f59e0b', '#10b981', '#ef4444'],
+} as const

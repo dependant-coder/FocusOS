@@ -47,7 +47,7 @@ export function EmptyState({
     <motion.div
       initial={{ opacity: 0, scale: 0.96 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
       className="flex flex-col items-center justify-center py-16 px-8 text-center"
     >
       <motion.span
@@ -59,37 +59,42 @@ export function EmptyState({
       >
         {c.emoji}
       </motion.span>
-      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1">{c.title}</h3>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-[240px]">{c.body}</p>
+      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-1 tracking-tight">
+        {c.title}
+      </h3>
+      <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-[260px] leading-relaxed">
+        {c.body}
+      </p>
 
       <div className="flex flex-col sm:flex-row items-center gap-3">
         {c.cta && onAction && (
           <motion.button
+            type="button"
             onClick={onAction}
             whileTap={{ scale: 0.96 }}
-            className="px-5 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium transition-colors shadow-sm shadow-brand-500/20"
+            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors shadow-sm shadow-indigo-600/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
           >
             {c.cta}
           </motion.button>
         )}
 
-        {secondaryAction && (
-          secondaryAction.href ? (
+        {secondaryAction &&
+          (secondaryAction.href ? (
             <Link
               to={secondaryAction.href}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 text-sm font-medium transition-colors"
+              className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
             >
               {secondaryAction.label}
             </Link>
           ) : (
             <button
+              type="button"
               onClick={secondaryAction.onClick}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 text-sm font-medium transition-colors"
+              className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/60 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
             >
               {secondaryAction.label}
             </button>
-          )
-        )}
+          ))}
       </div>
     </motion.div>
   )

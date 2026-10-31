@@ -73,8 +73,10 @@ export default function DailyTodoCard({ todo, onToggle, onDelete }: Omit<DailyTo
             </motion.p>
             {hasDetails && (
               <button
+                type="button"
                 onClick={() => setExpanded(!expanded)}
-                className="shrink-0 p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                aria-label={expanded ? 'Collapse task details' : 'Expand task details'}
+                className="shrink-0 p-0.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
               >
                 {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
@@ -91,7 +93,7 @@ export default function DailyTodoCard({ todo, onToggle, onDelete }: Omit<DailyTo
               </span>
             )}
             {todo.type === 'adhoc' && (
-              <span className="text-[10px] font-medium text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full">
+              <span className="text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-full">
                 Ad-hoc
               </span>
             )}

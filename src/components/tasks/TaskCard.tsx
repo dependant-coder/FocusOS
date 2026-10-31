@@ -21,12 +21,20 @@ export default function TaskCard({ task, onPin, onTap, isPinning }: TaskCardProp
 
   return (
     <div
+      role="button"
+      tabIndex={0}
       onClick={() => onTap(task)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onTap(task)
+        }
+      }}
       className={`
         relative bg-white dark:bg-gray-900 rounded-xl border-l-4
         ${priorityColor.border}
         shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer
-        active:scale-[0.98]
+        active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-950
       `}
     >
       <div className="p-4">
@@ -52,6 +60,7 @@ export default function TaskCard({ task, onPin, onTap, isPinning }: TaskCardProp
               onChange={(checked) => onPin(task.id, checked)}
               disabled={isPinning}
               size="sm"
+              aria-label={`Pin "${task.title}" to today`}
             />
           </div>
         </div>

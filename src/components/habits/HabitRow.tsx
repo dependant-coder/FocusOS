@@ -112,7 +112,7 @@ export default function HabitRow({
           </div>
           <div className="flex items-center justify-between mt-1.5 gap-2">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium uppercase tracking-wider">
                 {frequencyLabel}
               </span>
               {streak > 0 ? (
@@ -125,7 +125,7 @@ export default function HabitRow({
                   )}
                 </span>
               ) : (
-                <span className="text-[10px] text-gray-400">0 streak</span>
+                <span className="text-[10px] text-gray-500 dark:text-gray-400">0 streak</span>
               )}
             </div>
             <StreakDots completedDates={completedDates} />
@@ -135,9 +135,10 @@ export default function HabitRow({
         {/* Menu */}
         <div className="relative">
           <button
+            type="button"
             onClick={() => setShowMenu(!showMenu)}
-            aria-label="Habit options"
-            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors"
+            aria-label={`Options for ${habit.name}`}
+            className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
           >
             <MoreVertical size={16} />
           </button>

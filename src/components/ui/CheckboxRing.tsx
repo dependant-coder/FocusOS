@@ -1,26 +1,36 @@
 import { motion, AnimatePresence } from 'framer-motion'
+import { PRIORITY_CONFIG } from '../../lib/constants'
 
 interface CheckboxRingProps {
   checked: boolean
   onChange: (checked: boolean) => void
   priority?: 'critical' | 'high' | 'medium' | 'low'
+  label?: string
 }
 
-const priorityColors = {
-  critical: '#ef4444',
-  high: '#f97316',
-  medium: '#eab308',
-  low: '#22c55e',
-}
-
-export function CheckboxRing({ checked, onChange, priority = 'medium' }: CheckboxRingProps) {
-  const color = priorityColors[priority]
+export function CheckboxRing({
+  checked,
+  onChange,
+  priority = 'medium',
+  label,
+}: CheckboxRingProps) {
+  const color = PRIORITY_CONFIG[priority]?.color || '#eab308'
 
   return (
     <motion.button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label || (checked ? 'Mark incomplete' : 'Mark complete')}
       onClick={() => onChange(!checked)}
-      className="relative w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 focus-visible:ring-offset-2"
-      style={{ borderColor: checked ? color : '#d1d5db' }}
+      onKeyDown={(e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault()
+          onChange(!checked)
+        }
+      }}
+      className="relative w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900"
+      style={{ borderColor: checked ? color : 'currentColor' }}
       whileTap={{ scale: 0.85 }}
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
     >
