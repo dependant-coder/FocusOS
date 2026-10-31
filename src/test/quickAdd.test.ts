@@ -67,4 +67,29 @@ describe('parseQuickAdd parser', () => {
     expect(res.dueTime).toBe('17:00:00')
     expect(res.toToday).toBe(false)
   })
+
+  it('parses "write report by 5pm 45m" into dueTime 17:00:00 and estimateMin 45', () => {
+    const res = parseQuickAdd('write report by 5pm 45m')
+    expect(res.title).toBe('write report')
+    expect(res.dueTime).toBe('17:00:00')
+    expect(res.estimateMin).toBe(45)
+  })
+
+  it('builds createTask payload containing due_time, estimate_min, and null energy_level', () => {
+    const parsed = parseQuickAdd('write report by 5pm 45m')
+    const payload = {
+      title: parsed.title,
+      priority: parsed.priority || 'medium',
+      category: parsed.category || 'personal',
+      due_date: parsed.dueDate || null,
+      due_time: parsed.dueTime || null,
+      estimate_min: parsed.estimateMin || null,
+      energy_level: null,
+      pin_to_today: parsed.toToday,
+    }
+
+    expect(payload.due_time).toBe('17:00:00')
+    expect(payload.estimate_min).toBe(45)
+    expect(payload.energy_level).toBeNull()
+  })
 })

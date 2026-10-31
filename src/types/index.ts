@@ -24,8 +24,11 @@ export type Theme = 'light' | 'dark' | 'system'
 // Daily todo with joined task fields
 export type DailyTodoWithTask = DailyTodo & {
   tasks: {
+    id?: string
     description: string | null
     resources_url: string | null
+    due_time?: string | null
+    estimate_min?: number | null
   } | null
 }
 

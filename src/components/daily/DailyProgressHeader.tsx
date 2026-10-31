@@ -1,63 +1,54 @@
 import { motion } from 'framer-motion'
+import { Sparkles } from 'lucide-react'
+import ProgressRing from './ProgressRing'
+
+interface DailyProgressHeaderProps {
+  completed: number
+  total: number
+  date: Date
+  onOpenPlanDay?: () => void
+}
 
 export function DailyProgressHeader({
   completed,
   total,
   date,
-}: {
-  completed: number
-  total: number
-  date: Date
-}) {
-  const pct = total > 0 ? Math.round((completed / total) * 100) : 0
+  onOpenPlanDay,
+}: DailyProgressHeaderProps) {
   const allDone = total > 0 && completed === total
 
   return (
-    <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-100 dark:border-gray-800 px-4 pt-[env(safe-area-inset-top)] pb-3">
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            {date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
-          </p>
-          <motion.p
-            key={allDone ? 'done' : 'progress'}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-base font-semibold text-gray-900 dark:text-white"
-          >
-            {allDone ? '🎉 All done!' : `${completed} of ${total} done`}
-          </motion.p>
+    <div className="sticky top-0 z-20 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border-b border-gray-100 dark:border-gray-800 px-4 pt-[env(safe-area-inset-top)] pb-3.5 shadow-xs">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <ProgressRing completed={completed} total={total} size={54} strokeWidth={5} />
+          <div>
+            <p className="text-xs font-medium text-gray-500 dark:text-gray-400 capitalize">
+              {date.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+            </p>
+            <motion.p
+              key={allDone ? 'done' : 'progress'}
+              initial={{ opacity: 0, y: -2 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="text-base font-bold text-gray-900 dark:text-white tracking-tight"
+            >
+              {allDone ? '🎉 All complete!' : `${completed} of ${total} done`}
+            </motion.p>
+          </div>
         </div>
-        <motion.span
-          key={pct}
-          animate={{ scale: [1.1, 1] }}
-          transition={{ duration: 0.2 }}
-          className="text-2xl font-bold text-brand-500"
-        >
-          {pct}%
-        </motion.span>
-      </div>
 
-      {/* Progress bar */}
-      <div className="h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-        <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600"
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
-        />
+        {onOpenPlanDay && (
+          <button
+            type="button"
+            onClick={onOpenPlanDay}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-semibold border border-indigo-200/60 dark:border-indigo-800/40 transition-colors shadow-2xs focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            aria-label="Open Plan My Day"
+          >
+            <Sparkles size={14} className="text-indigo-600 dark:text-indigo-400" />
+            <span>Plan my day</span>
+          </button>
+        )}
       </div>
-
-      {/* Confetti burst when 100% */}
-      {allDone && (
-        <motion.div
-          initial={{ opacity: 1 }}
-          animate={{ opacity: 0 }}
-          transition={{ delay: 2, duration: 0.5 }}
-          className="absolute inset-0 pointer-events-none"
-          // We can wire confetti library here later if 'canvas-confetti' is added
-        />
-      )}
     </div>
   )
 }

@@ -47,9 +47,11 @@ export const QuickAddBar = forwardRef<QuickAddBarHandle>(function QuickAddBar(_p
           priority: parsed.priority || 'medium',
           category: parsed.category || 'personal',
           due_date: parsed.dueDate || null,
+          due_time: parsed.dueTime || null,
+          estimate_min: parsed.estimateMin || null,
           description: parsed.courseId ? `Course: #${parsed.courseId}` : null,
           resources_url: null,
-          energy_level: parsed.estimateMin && parsed.estimateMin >= 45 ? 'deep_work' : parsed.estimateMin ? 'quick_task' : null,
+          energy_level: null,
           pin_to_today: parsed.toToday,
         },
         {

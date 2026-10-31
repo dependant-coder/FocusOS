@@ -35,13 +35,21 @@ export function useDailyTodos() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('daily_todos')
-        .select('*, tasks(description, resources_url)')
+        .select('*, tasks(id, description, resources_url, due_time, estimate_min)')
         .eq('user_id', user!.id)
         .eq('date', today)
         .order('created_at', { ascending: true })
 
       if (error) throw error
-      return data as (DailyTodo & { tasks: { description: string | null; resources_url: string | null } | null })[]
+      return data as (DailyTodo & {
+        tasks: {
+          id?: string
+          description: string | null
+          resources_url: string | null
+          due_time?: string | null
+          estimate_min?: number | null
+        } | null
+      })[]
     },
   })
 }
@@ -185,3 +193,87 @@ export function useDeleteDailyTodo() {
     },
   })
 }
+
+/** Toggle a daily todo's must_do status */
+export function useToggleMustDo() {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: async ({ id, must_do }: { id: string; must_do: boolean }) => {
+      const { error } = await supabase
+        .from('daily_todos')
+        .update({ must_do })
+        .eq('id', id)
+
+      if (error) throw error
+    },
+    onMutate: async ({ id, must_do }) => {
+      const today = todayLocal()
+      const key = ['daily_todos', user?.id, today]
+      await qc.cancelQueries({ queryKey: key })
+      const prev = qc.getQueryData<DailyTodo[]>(key)
+
+      qc.setQueryData<DailyTodo[]>(key, (old) =>
+        old?.map((t) => (t.id === id ? { ...t, must_do } : t))
+      )
+      return { prev, key }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev && ctx?.key) {
+        qc.setQueryData(ctx.key, ctx.prev)
+      }
+      toast.error('Failed to update must-do')
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+    },
+  })
+}
+
+/** Move a daily todo to another date (e.g. tomorrow or picked date) */
+export function useMoveTodoDate() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({
+      todoId,
+      taskId,
+      newDate,
+    }: {
+      todoId: string
+      taskId?: string | null
+      newDate: string
+    }) => {
+      // If linked to a task, update tasks.due_date and remove the daily_todo for today
+      if (taskId) {
+        const { error: taskErr } = await supabase
+          .from('tasks')
+          .update({ due_date: newDate })
+          .eq('id', taskId)
+        if (taskErr) throw taskErr
+
+        const { error: todoErr } = await supabase
+          .from('daily_todos')
+          .delete()
+          .eq('id', todoId)
+        if (todoErr) throw todoErr
+      } else {
+        // Adhoc todo: update date directly
+        const { error: todoErr } = await supabase
+          .from('daily_todos')
+          .update({ date: newDate })
+          .eq('id', todoId)
+        if (todoErr) throw todoErr
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+    onError: () => {
+      toast.error('Failed to move task')
+    },
+  })
+}
+
