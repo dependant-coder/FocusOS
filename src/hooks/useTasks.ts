@@ -1,9 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import type { Task, TaskInsert, TaskUpdate, TaskFilters } from '../types'
+import type { Task, TaskInsert, TaskUpdate, TaskFilters, Priority } from '../types'
 import { PRIORITY_ORDER } from '../lib/constants'
+import { todayLocal } from '../lib/dates'
 import toast from 'react-hot-toast'
-
 import { useAuth } from './useAuth'
 
 // Fetch all tasks with optional filters
@@ -57,6 +57,7 @@ export function useCreateTask() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
     onError: (err) => {
       toast.error(`Failed: ${err.message}`)
@@ -80,6 +81,7 @@ export function useUpdateTask() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
     onError: (err) => {
       toast.error(`Failed: ${err.message}`)
@@ -87,20 +89,116 @@ export function useUpdateTask() {
   })
 }
 
-// Delete a task
+// Toggle task completion with optimistic updates & daily_todos sync
+export function useToggleTaskComplete() {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: async ({ id, done }: { id: string; done: boolean }) => {
+      const updates = {
+        status: done ? 'done' : 'not_started',
+        completed_at: done ? new Date().toISOString() : null,
+      }
+      const { data, error } = await supabase
+        .from('tasks')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single()
+      if (error) throw error
+
+      if (user?.id) {
+        const today = todayLocal()
+        await supabase
+          .from('daily_todos')
+          .update({ done })
+          .eq('user_id', user.id)
+          .eq('task_id', id)
+          .eq('date', today)
+      }
+
+      return data
+    },
+    onMutate: async ({ id, done }) => {
+      await qc.cancelQueries({ queryKey: ['tasks'] })
+      const previousTasks = qc.getQueriesData<Task[]>({ queryKey: ['tasks'] })
+
+      qc.setQueriesData<Task[]>({ queryKey: ['tasks'] }, (old) => {
+        if (!old) return old
+        return old.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                status: done ? 'done' : 'not_started',
+                completed_at: done ? new Date().toISOString() : null,
+                is_overdue: done ? false : t.is_overdue,
+              }
+            : t
+        )
+      })
+
+      // Optimistic update for daily todos query
+      if (user?.id) {
+        const today = todayLocal()
+        const dailyKey = ['daily_todos', user.id, today]
+        qc.setQueriesData({ queryKey: dailyKey }, (old: unknown) => {
+          if (!old || !Array.isArray(old)) return old
+          return (old as { task_id?: string | null; done: boolean }[]).map((d) =>
+            d.task_id === id ? { ...d, done } : d
+          )
+        })
+      }
+
+      return { previousTasks }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousTasks) {
+        context.previousTasks.forEach(([queryKey, data]) => {
+          qc.setQueryData(queryKey, data)
+        })
+      }
+      toast.error('Failed to update task')
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+    },
+  })
+}
+
+// Delete a task (with orphan daily_todos cleanup)
 export function useDeleteTask() {
   const qc = useQueryClient()
+  const { user } = useAuth()
+
   return useMutation({
     mutationFn: async (id: string) => {
+      const today = todayLocal()
+      // Deleting a task cascades via SET NULL on daily_todos.task_id;
+      // also delete that task's undone daily_todos (date <= today) so orphan rows don't linger.
+      if (user?.id) {
+        const { error: dailyErr } = await supabase
+          .from('daily_todos')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('task_id', id)
+          .eq('done', false)
+          .lte('date', today)
+        if (dailyErr) {
+          console.error('[useDeleteTask] Error cleaning orphan daily_todos:', dailyErr)
+        }
+      }
+
       const { error } = await supabase.from('tasks').delete().eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
-      toast.success('Task deleted')
       qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
     onError: (err) => {
-      toast.error(`Failed: ${err.message}`)
+      toast.error(`Failed to delete task: ${err.message}`)
     },
   })
 }
@@ -139,6 +237,116 @@ export function usePinTask() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
+    },
+  })
+}
+
+// Bulk complete tasks
+export function useBulkCompleteTasks() {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const now = new Date().toISOString()
+      const { error } = await supabase
+        .from('tasks')
+        .update({ status: 'done', completed_at: now })
+        .in('id', ids)
+      if (error) throw error
+
+      if (user?.id) {
+        const today = todayLocal()
+        await supabase
+          .from('daily_todos')
+          .update({ done: true })
+          .eq('user_id', user.id)
+          .in('task_id', ids)
+          .eq('date', today)
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+      toast.success('Tasks completed')
+    },
+    onError: (err) => {
+      toast.error(`Bulk complete failed: ${err.message}`)
+    },
+  })
+}
+
+// Bulk pin tasks to today
+export function useBulkPinTasks() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ pin_to_today: true })
+        .in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+      toast.success('Tasks added to Today')
+    },
+    onError: (err) => {
+      toast.error(`Bulk add failed: ${err.message}`)
+    },
+  })
+}
+
+// Bulk set priority
+export function useBulkSetPriority() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ ids, priority }: { ids: string[]; priority: Priority }) => {
+      const { error } = await supabase
+        .from('tasks')
+        .update({ priority })
+        .in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      toast.success('Priority updated')
+    },
+    onError: (err) => {
+      toast.error(`Update failed: ${err.message}`)
+    },
+  })
+}
+
+// Bulk delete tasks
+export function useBulkDeleteTasks() {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const today = todayLocal()
+      if (user?.id) {
+        await supabase
+          .from('daily_todos')
+          .delete()
+          .eq('user_id', user.id)
+          .in('task_id', ids)
+          .eq('done', false)
+          .lte('date', today)
+      }
+      const { error } = await supabase.from('tasks').delete().in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+    },
+    onError: (err) => {
+      toast.error(`Delete failed: ${err.message}`)
     },
   })
 }

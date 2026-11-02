@@ -40,6 +40,12 @@ export function startOfWeekLocal(str: string): string {
   return format(startOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd')
 }
 
+/** Get the Sunday end-of-week for a local YYYY-MM-DD string */
+export function endOfWeekLocal(str: string): string {
+  const d = parseLocalDate(str)
+  return format(endOfWeek(d, { weekStartsOn: 1 }), 'yyyy-MM-dd')
+}
+
 /** Get yesterday's local date as YYYY-MM-DD string */
 export function yesterdayLocal(): string {
   return addDaysLocal(todayLocal(), -1)

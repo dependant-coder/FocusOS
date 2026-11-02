@@ -1,14 +1,17 @@
-import { isToday, isTomorrow, isPast, differenceInDays, parseISO } from 'date-fns'
+import { isToday, isTomorrow, isPast, differenceInDays } from 'date-fns'
+import { parseLocalDate, todayLocal } from '../../lib/dates'
 
 interface DateChipProps {
   date: string | null | undefined
+  dueTime?: string | null
+  className?: string
 }
 
-export default function DateChip({ date }: DateChipProps) {
+export default function DateChip({ date, dueTime, className = '' }: DateChipProps) {
   if (!date) return null
 
-  const parsed = parseISO(date)
-  const today = new Date()
+  const parsed = parseLocalDate(date)
+  const today = parseLocalDate(todayLocal())
 
   let label: string
   let classes: string
@@ -29,9 +32,12 @@ export default function DateChip({ date }: DateChipProps) {
     classes = 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-slate-500/10 dark:text-slate-400 dark:border-slate-500/20'
   }
 
+  const timeFormatted = dueTime ? dueTime.slice(0, 5) : null
+  const displayLabel = timeFormatted ? `${label} · ${timeFormatted}` : label
+
   return (
-    <span className={`inline-flex items-center text-[10px] font-medium rounded-full px-1.5 py-0.5 border ${classes}`}>
-      {label}
+    <span className={`inline-flex items-center text-[10px] font-medium rounded-full px-1.5 py-0.5 border ${classes} ${className}`}>
+      {displayLabel}
     </span>
   )
 }

@@ -6,11 +6,26 @@ interface TaskListProps {
   tasks: Task[]
   onPin: (id: string, pinned: boolean) => void
   onTap: (task: Task) => void
+  onToggleComplete?: (task: Task) => void
   isPinning?: boolean
   onAddFirst?: () => void
+  // Bulk selection props
+  isSelectionMode?: boolean
+  selectedIds?: Set<string>
+  onToggleSelect?: (taskId: string) => void
 }
 
-export default function TaskList({ tasks, onPin, onTap, isPinning, onAddFirst }: TaskListProps) {
+export default function TaskList({
+  tasks,
+  onPin,
+  onTap,
+  onToggleComplete,
+  isPinning,
+  onAddFirst,
+  isSelectionMode,
+  selectedIds,
+  onToggleSelect,
+}: TaskListProps) {
   if (tasks.length === 0) {
     return (
       <EmptyState
@@ -28,7 +43,11 @@ export default function TaskList({ tasks, onPin, onTap, isPinning, onAddFirst }:
           task={task}
           onPin={onPin}
           onTap={onTap}
+          onToggleComplete={onToggleComplete}
           isPinning={isPinning}
+          isSelectionMode={isSelectionMode}
+          isSelected={selectedIds?.has(task.id)}
+          onToggleSelect={onToggleSelect}
         />
       ))}
     </div>

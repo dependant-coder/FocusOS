@@ -11,10 +11,10 @@ export interface Habit {
   name: string
   icon: string
   frequency: 'daily' | 'weekdays' | 'weekends' | 'custom'
-  custom_days: string[]
+  custom_days: string[] | null
   active: boolean
-  sort_order: number
-  created_at: string
+  sort_order: number | null
+  created_at: string | null
 }
 
 export interface HabitLog {
@@ -41,13 +41,34 @@ export function useHabits() {
         .order('sort_order', { ascending: true })
 
       if (error) throw error
+      return (data as Habit[]).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    },
+  })
+}
+
+/** Fetch archived habits for the current user */
+export function useArchivedHabits() {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['habits_archived', user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('habits')
+        .select('*')
+        .eq('user_id', user!.id)
+        .eq('active', false)
+        .order('sort_order', { ascending: true })
+
+      if (error) throw error
       return data as Habit[]
     },
   })
 }
 
-/** Fetch habit logs for the last N days */
-export function useHabitLogs(days = 30) {
+/** Fetch habit logs for the last N days (defaults to 90 to power 30/90-day calendar views) */
+export function useHabitLogs(days = 90) {
   const { user } = useAuth()
   const startStr = addDaysLocal(todayLocal(), -days)
 
@@ -80,6 +101,7 @@ export function useCreateHabit() {
       icon: string
       frequency: string
       custom_days?: string[]
+      sort_order?: number
     }) => {
       const id = habit.id || crypto.randomUUID()
       const { data, error } = await supabase
@@ -92,6 +114,8 @@ export function useCreateHabit() {
             icon: habit.icon,
             frequency: habit.frequency,
             custom_days: habit.custom_days || [],
+            sort_order: habit.sort_order ?? 0,
+            active: true,
           },
           { ignoreDuplicates: true }
         )
@@ -103,9 +127,10 @@ export function useCreateHabit() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['habits'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
-    onError: () => {
-      toast.error('Failed to create habit')
+    onError: (err) => {
+      toast.error(`Failed to create habit: ${err.message}`)
     },
   })
 }
@@ -128,15 +153,62 @@ export function useUpdateHabit() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['habits'] })
+      qc.invalidateQueries({ queryKey: ['habits_archived'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
-    onError: () => {
-      toast.error('Failed to update')
+    onError: (err) => {
+      toast.error(`Failed to update habit: ${err.message}`)
     },
   })
 }
 
-/** Soft-delete a habit (set active = false) */
-export function useDeleteHabit() {
+/** Reorder habits and persist sort_order */
+export function useReorderHabits() {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+
+  return useMutation({
+    mutationFn: async (items: { id: string; sort_order: number }[]) => {
+      await Promise.all(
+        items.map((h) =>
+          supabase
+            .from('habits')
+            .update({ sort_order: h.sort_order })
+            .eq('id', h.id)
+            .eq('user_id', user!.id)
+        )
+      )
+    },
+    onMutate: async (newOrder) => {
+      await qc.cancelQueries({ queryKey: ['habits', user?.id] })
+      const prev = qc.getQueryData<Habit[]>(['habits', user?.id])
+
+      qc.setQueryData<Habit[]>(['habits', user?.id], (old) => {
+        if (!old) return old
+        const orderMap = new Map(newOrder.map((h) => [h.id, h.sort_order]))
+        return [...old].sort((a, b) => {
+          const oa = orderMap.get(a.id) ?? a.sort_order ?? 0
+          const ob = orderMap.get(b.id) ?? b.sort_order ?? 0
+          return oa - ob
+        })
+      })
+
+      return { prev }
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.prev) {
+        qc.setQueryData(['habits', user?.id], ctx.prev)
+      }
+      toast.error('Failed to update habit order')
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['habits'] })
+    },
+  })
+}
+
+/** Archive a habit (active = false) */
+export function useArchiveHabit() {
   const qc = useQueryClient()
 
   return useMutation({
@@ -150,15 +222,65 @@ export function useDeleteHabit() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['habits'] })
-      toast.success('Habit archived')
+      qc.invalidateQueries({ queryKey: ['habits_archived'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
-    onError: () => {
-      toast.error('Failed to archive')
+    onError: (err) => {
+      toast.error(`Failed to archive habit: ${err.message}`)
     },
   })
 }
 
-/** Toggle a habit log for today (optimistic) */
+/** Restore an archived habit (active = true) */
+export function useRestoreHabit() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('habits')
+        .update({ active: true })
+        .eq('id', id)
+
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['habits'] })
+      qc.invalidateQueries({ queryKey: ['habits_archived'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+      toast.success('Habit restored')
+    },
+    onError: (err) => {
+      toast.error(`Failed to restore habit: ${err.message}`)
+    },
+  })
+}
+
+/** Permanently delete a habit */
+export function useDeleteHabitPermanently() {
+  const qc = useQueryClient()
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('habits').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['habits'] })
+      qc.invalidateQueries({ queryKey: ['habits_archived'] })
+      qc.invalidateQueries({ queryKey: ['habit_logs'] })
+      qc.invalidateQueries({ queryKey: ['daily_todos'] })
+    },
+    onError: (err) => {
+      toast.error(`Failed to delete habit: ${err.message}`)
+    },
+  })
+}
+
+/** Legacy alias for backwards compatibility */
+export const useDeleteHabit = useArchiveHabit
+
+/** Toggle a habit log for today or any date (optimistic, with 2-way sync to daily_todos) */
 export function useToggleHabitLog() {
   const qc = useQueryClient()
   const { user } = useAuth()
@@ -185,7 +307,7 @@ export function useToggleHabitLog() {
 
       if (error) throw error
 
-      // Bidirectional sync: update matching daily_todos
+      // Client-side 2-way sync: update matching daily_todos
       await supabase
         .from('daily_todos')
         .update({ done: completed })
@@ -194,19 +316,15 @@ export function useToggleHabitLog() {
         .eq('date', date)
     },
     onMutate: async ({ habitId, date, completed }) => {
-      const key = ['habit_logs', user?.id, 30]
-      await qc.cancelQueries({ queryKey: key })
-      const prev = qc.getQueryData<HabitLog[]>(key)
+      // Cancel queries
+      await qc.cancelQueries({ queryKey: ['habit_logs', user?.id] })
 
-      qc.setQueryData<HabitLog[]>(key, (old = []) => {
-        const exists = old.find(
-          (l) => l.habit_id === habitId && l.date === date
-        )
+      // Optimistic update for habit_logs (across all day limits)
+      qc.setQueriesData<HabitLog[]>({ queryKey: ['habit_logs', user?.id] }, (old = []) => {
+        const exists = old.find((l) => l.habit_id === habitId && l.date === date)
         if (exists) {
           return old.map((l) =>
-            l.habit_id === habitId && l.date === date
-              ? { ...l, completed }
-              : l
+            l.habit_id === habitId && l.date === date ? { ...l, completed } : l
           )
         }
         return [
@@ -228,13 +346,10 @@ export function useToggleHabitLog() {
         return old.map((t) => (t.habit_id === habitId ? { ...t, done: completed } : t))
       })
 
-      return { prev }
+      return {}
     },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.prev) {
-        qc.setQueryData(['habit_logs', user?.id, 30], ctx.prev)
-      }
-      toast.error('Failed to update')
+    onError: () => {
+      toast.error('Failed to update habit')
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['habit_logs'] })
