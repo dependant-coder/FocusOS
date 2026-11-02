@@ -276,20 +276,29 @@ export function useToggleMustDo() {
   })
 }
 
+export interface MoveTodoDateArgs {
+  todoId: string
+  taskId?: string | null
+  title?: string
+  habitId?: string | null
+  newDate: string
+}
+
 /** Move a daily todo to another date (e.g. tomorrow or picked date) */
 export function useMoveTodoDate() {
   const qc = useQueryClient()
+  const { user } = useAuth()
 
   return useMutation({
     mutationFn: async ({
       todoId,
       taskId,
+      title,
+      habitId,
       newDate,
-    }: {
-      todoId: string
-      taskId?: string | null
-      newDate: string
-    }) => {
+    }: MoveTodoDateArgs) => {
+      const today = todayLocal()
+
       // If linked to a task, update tasks.due_date, set pin_to_today = false, and remove the daily_todo for today
       if (taskId) {
         const { error: taskErr } = await supabase
@@ -304,11 +313,53 @@ export function useMoveTodoDate() {
           .eq('id', todoId)
         if (todoErr) throw todoErr
       } else {
+        // Resolve title and habit_id if not provided
+        let adhocTitle = title
+        let adhocHabitId = habitId
+
+        if (!adhocTitle) {
+          const cached = qc.getQueryData<DailyTodo[]>(['daily_todos', user?.id, today])
+          const item = cached?.find((t) => t.id === todoId)
+          if (item) {
+            adhocTitle = item.title
+            adhocHabitId = item.habit_id
+          } else {
+            const { data: current } = await supabase
+              .from('daily_todos')
+              .select('title, habit_id')
+              .eq('id', todoId)
+              .maybeSingle()
+            if (current) {
+              adhocTitle = current.title
+              adhocHabitId = current.habit_id
+            }
+          }
+        }
+
+        const isAdhoc = !taskId && !adhocHabitId && Boolean(adhocTitle)
+
+        // For ad-hoc todos (no task_id, no habit_id):
+        // before/after moving the row, delete every OTHER undone daily_todo of the same user with the same title,
+        // task_id null, habit_id null, date <= today (local).
+        if (isAdhoc && user && adhocTitle) {
+          await supabase
+            .from('daily_todos')
+            .delete()
+            .eq('user_id', user.id)
+            .is('task_id', null)
+            .is('habit_id', null)
+            .eq('title', adhocTitle)
+            .eq('done', false)
+            .lte('date', today)
+            .neq('id', todoId)
+        }
+
         // Adhoc todo: update date directly
         const { error: todoErr } = await supabase
           .from('daily_todos')
           .update({ date: newDate })
           .eq('id', todoId)
+
         if (todoErr) {
           if (
             todoErr.code === '23505' ||
@@ -321,6 +372,20 @@ export function useMoveTodoDate() {
             throw err
           }
           throw todoErr
+        }
+
+        // After moving: also clean up any older undone copies dated <= today
+        if (isAdhoc && user && adhocTitle) {
+          await supabase
+            .from('daily_todos')
+            .delete()
+            .eq('user_id', user.id)
+            .is('task_id', null)
+            .is('habit_id', null)
+            .eq('title', adhocTitle)
+            .eq('done', false)
+            .lte('date', today)
+            .neq('id', todoId)
         }
       }
     },

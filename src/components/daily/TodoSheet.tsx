@@ -58,6 +58,8 @@ export function TodoSheet({ isOpen, onClose, todo }: TodoSheetProps) {
     moveTodoDate.mutate({
       todoId: todo.id,
       taskId: todo.task_id,
+      title: todo.title,
+      habitId: todo.habit_id,
       newDate: tomorrow,
     })
     onClose()

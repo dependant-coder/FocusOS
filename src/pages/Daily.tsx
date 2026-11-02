@@ -139,6 +139,8 @@ export default function Daily() {
       {
         todoId: todo.id,
         taskId: todo.task_id,
+        title: todo.title,
+        habitId: todo.habit_id,
         newDate: addDaysLocal(todayLocal(), 1),
       },
       {

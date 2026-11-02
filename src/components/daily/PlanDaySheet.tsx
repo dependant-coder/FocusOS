@@ -50,6 +50,8 @@ export function PlanDaySheet({ isOpen, onClose, todos }: PlanDaySheetProps) {
       {
         todoId: todo.id,
         taskId: todo.task_id,
+        title: todo.title,
+        habitId: todo.habit_id,
         newDate: tomorrow,
       },
       {
@@ -66,6 +68,8 @@ export function PlanDaySheet({ isOpen, onClose, todos }: PlanDaySheetProps) {
       {
         todoId: todo.id,
         taskId: todo.task_id,
+        title: todo.title,
+        habitId: todo.habit_id,
         newDate: selectedDate,
       },
       {
