@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { Star, ArrowRight, Trash2 } from 'lucide-react'
 import BottomSheet from '../ui/BottomSheet'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../../hooks/useAuth'
 import { useUpdateTask } from '../../hooks/useTasks'
 import { useToggleMustDo, useMoveTodoDate, useDeleteDailyTodo } from '../../hooks/useDailyTodos'
 import { todayLocal, addDaysLocal } from '../../lib/dates'
@@ -20,6 +22,8 @@ export function TodoSheet({ isOpen, onClose, todo }: TodoSheetProps) {
   const [category, setCategory] = useState<Category>('personal')
   const [description, setDescription] = useState('')
 
+  const qc = useQueryClient()
+  const { user } = useAuth()
   const updateTask = useUpdateTask()
   const toggleMustDo = useToggleMustDo()
   const moveTodoDate = useMoveTodoDate()
@@ -61,12 +65,29 @@ export function TodoSheet({ isOpen, onClose, todo }: TodoSheetProps) {
 
   const handleDelete = () => {
     onClose()
+    const queryKey = ['daily_todos', user?.id, todayLocal()]
+    qc.setQueryData<DailyTodoWithTask[]>(queryKey, (old) =>
+      old ? old.filter((t) => t.id !== todo.id) : []
+    )
+
     showUndo({
       message: `Deleted "${todo.title}"`,
-      onUndo: () => {},
-      onCommit: () => {
-        deleteTodo.mutate(todo.id)
+      onUndo: () => {
+        qc.setQueryData<DailyTodoWithTask[]>(queryKey, (old) => {
+          if (!old) return [todo]
+          if (old.some((t) => t.id === todo.id)) return old
+          return [...old, todo]
+        })
       },
+      onCommit: () => {
+        deleteTodo.mutate({
+          id: todo.id,
+          taskId: todo.task_id,
+          title: todo.title,
+          habitId: todo.habit_id,
+        })
+      },
+      ms: 5000,
     })
   }
 

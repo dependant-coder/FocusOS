@@ -9,6 +9,8 @@ import {
 } from 'lucide-react'
 import BottomSheet from '../ui/BottomSheet'
 import { todayLocal, addDaysLocal, formatShortDate } from '../../lib/dates'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../../hooks/useAuth'
 import { useToggleMustDo, useMoveTodoDate, useDeleteDailyTodo } from '../../hooks/useDailyTodos'
 import { showUndo } from '../../lib/undo'
 import toast from 'react-hot-toast'
@@ -24,12 +26,14 @@ export function PlanDaySheet({ isOpen, onClose, todos }: PlanDaySheetProps) {
   const [customDateTodoId, setCustomDateTodoId] = useState<string | null>(null)
   const [selectedDate, setSelectedDate] = useState(addDaysLocal(todayLocal(), 2))
 
+  const qc = useQueryClient()
+  const { user } = useAuth()
   const toggleMustDo = useToggleMustDo()
   const moveTodoDate = useMoveTodoDate()
   const deleteTodo = useDeleteDailyTodo()
 
-  // Items to plan: uncompleted todos (especially carried over and priorities)
-  const uncompletedTodos = todos.filter((t) => !t.done)
+  // Items to plan: uncompleted non-habit todos (habits excluded per spec)
+  const uncompletedTodos = todos.filter((t) => !t.done && t.type !== 'habit')
   const mustDoCount = uncompletedTodos.filter((t) => t.must_do).length
 
   const handleToggleMustDo = (todo: DailyTodoWithTask) => {
@@ -74,13 +78,29 @@ export function PlanDaySheet({ isOpen, onClose, todos }: PlanDaySheetProps) {
   }
 
   const handleDrop = (todo: DailyTodoWithTask) => {
+    const queryKey = ['daily_todos', user?.id, todayLocal()]
+    // Optimistically remove from cache immediately
+    qc.setQueryData<DailyTodoWithTask[]>(queryKey, (old) =>
+      old ? old.filter((t) => t.id !== todo.id) : []
+    )
+
     showUndo({
       message: `Dropped "${todo.title}" from today`,
       onUndo: () => {
-        // Undo: keep item on today by doing nothing (since deletion was delayed)
+        // Restore to cache on undo
+        qc.setQueryData<DailyTodoWithTask[]>(queryKey, (old) => {
+          if (!old) return [todo]
+          if (old.some((t) => t.id === todo.id)) return old
+          return [...old, todo]
+        })
       },
       onCommit: () => {
-        deleteTodo.mutate(todo.id)
+        deleteTodo.mutate({
+          id: todo.id,
+          taskId: todo.task_id,
+          title: todo.title,
+          habitId: todo.habit_id,
+        })
       },
       ms: 5000,
     })

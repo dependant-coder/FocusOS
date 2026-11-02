@@ -4,6 +4,19 @@ import { PlanDaySheet } from '../components/daily/PlanDaySheet'
 import type { DailyTodoWithTask } from '../types'
 
 // Mock dependencies
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    setQueryData: vi.fn(),
+    invalidateQueries: vi.fn(),
+  }),
+}))
+
+vi.mock('../hooks/useAuth', () => ({
+  useAuth: () => ({
+    user: { id: 'user-1' },
+  }),
+}))
+
 vi.mock('../lib/undo', () => ({
   showUndo: vi.fn(),
 }))

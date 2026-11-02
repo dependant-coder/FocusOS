@@ -171,18 +171,63 @@ export function useCreateAdhocTodo() {
   })
 }
 
-/** Delete a daily todo */
+export interface DeleteDailyTodoOptions {
+  id: string
+  taskId?: string | null
+  title?: string
+  habitId?: string | null
+}
+
+/** Delete a daily todo with multi-row carry clean up */
 export function useDeleteDailyTodo() {
   const qc = useQueryClient()
+  const { user } = useAuth()
 
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('daily_todos')
-        .delete()
-        .eq('id', id)
+    mutationFn: async (arg: string | DeleteDailyTodoOptions) => {
+      const id = typeof arg === 'string' ? arg : arg.id
+      const taskId = typeof arg === 'string' ? undefined : arg.taskId
+      const title = typeof arg === 'string' ? undefined : arg.title
+      const habitId = typeof arg === 'string' ? undefined : arg.habitId
 
-      if (error) throw error
+      const today = todayLocal()
+
+      if (taskId) {
+        // Delete all undone daily_todos for same task with date <= today
+        const { error: deleteErr } = await supabase
+          .from('daily_todos')
+          .delete()
+          .eq('user_id', user!.id)
+          .eq('task_id', taskId)
+          .eq('done', false)
+          .lte('date', today)
+        if (deleteErr) throw deleteErr
+
+        // Reset pin_to_today on task
+        const { error: taskErr } = await supabase
+          .from('tasks')
+          .update({ pin_to_today: false })
+          .eq('id', taskId)
+        if (taskErr) throw taskErr
+      } else if (title && !habitId) {
+        // Delete all undone adhoc daily_todos with same title and date <= today
+        const { error: deleteErr } = await supabase
+          .from('daily_todos')
+          .delete()
+          .eq('user_id', user!.id)
+          .is('task_id', null)
+          .is('habit_id', null)
+          .eq('title', title)
+          .eq('done', false)
+          .lte('date', today)
+        if (deleteErr) throw deleteErr
+      } else {
+        const { error } = await supabase
+          .from('daily_todos')
+          .delete()
+          .eq('id', id)
+        if (error) throw error
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
@@ -245,11 +290,11 @@ export function useMoveTodoDate() {
       taskId?: string | null
       newDate: string
     }) => {
-      // If linked to a task, update tasks.due_date and remove the daily_todo for today
+      // If linked to a task, update tasks.due_date, set pin_to_today = false, and remove the daily_todo for today
       if (taskId) {
         const { error: taskErr } = await supabase
           .from('tasks')
-          .update({ due_date: newDate })
+          .update({ due_date: newDate, pin_to_today: false })
           .eq('id', taskId)
         if (taskErr) throw taskErr
 
@@ -264,15 +309,34 @@ export function useMoveTodoDate() {
           .from('daily_todos')
           .update({ date: newDate })
           .eq('id', todoId)
-        if (todoErr) throw todoErr
+        if (todoErr) {
+          if (
+            todoErr.code === '23505' ||
+            todoErr.message?.includes('23505') ||
+            todoErr.message?.includes('unique')
+          ) {
+            // Remove the duplicate for today so it doesn't linger
+            await supabase.from('daily_todos').delete().eq('id', todoId)
+            const err = Object.assign(new Error('Already on that day'), { code: '23505' })
+            throw err
+          }
+          throw todoErr
+        }
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
-    onError: () => {
-      toast.error('Failed to move task')
+    onError: (err: unknown) => {
+      const isDuplicate =
+        (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === '23505') ||
+        (err instanceof Error && err.message.includes('Already on that day'))
+      if (isDuplicate) {
+        toast('Already on that day', { icon: 'ℹ️' })
+      } else {
+        toast.error('Failed to move task')
+      }
     },
   })
 }

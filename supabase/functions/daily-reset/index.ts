@@ -77,7 +77,6 @@ Deno.serve(async (req: any) => {
         .eq('user_id', uid)
         .lt('date', localToday)
         .gte('date', addDaysToDateString(localToday, -CARRY_WINDOW_DAYS))
-        .eq('done', false)
         .neq('type', 'habit')
         .order('date', { ascending: false })
 
@@ -86,7 +85,15 @@ Deno.serve(async (req: any) => {
       const carryBatch: any[] = []
       const seenCarryKeys = new Set<string>()
 
+      // Rows are ordered newest-first. The NEWEST row for an item (task, or ad-hoc title) decides whether it
+      // carries: if that row is done, older unfinished copies must NOT be resurrected.
+      const evaluatedKeys = new Set<string>()
+
       for (const todo of unresolvedTodos ?? []) {
+        const itemKey = todo.task_id ? `task:${todo.task_id}` : `title:${todo.title}`
+        if (evaluatedKeys.has(itemKey)) continue
+        evaluatedKeys.add(itemKey)
+        if (todo.done) continue
         // Never resurrect an item whose underlying task is already done
         if (todo.tasks?.status === 'done') continue
         if (todo.task_id && (existingTaskIds.has(todo.task_id) || seenCarryKeys.has(`task:${todo.task_id}`))) {

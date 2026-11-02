@@ -1,13 +1,5 @@
 import { motion } from 'framer-motion'
-
-const greetings = ['morning', 'afternoon', 'evening']
-
-function getGreeting() {
-  const h = new Date().getHours()
-  if (h < 12) return greetings[0]
-  if (h < 17) return greetings[1]
-  return greetings[2]
-}
+import { getGreeting } from '../../lib/dates'
 
 export function MorningBanner({ name, taskCount }: { name: string; taskCount: number }) {
   return (
@@ -18,7 +10,7 @@ export function MorningBanner({ name, taskCount }: { name: string; taskCount: nu
       className="px-4 pt-5 pb-4"
     >
       <p className="text-2xl font-semibold text-gray-900 dark:text-white truncate">
-        Good {getGreeting()}, {name.split(' ')[0]} 👋
+        {getGreeting()}, {name.split(' ')[0]} 👋
       </p>
       <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
         {taskCount === 0

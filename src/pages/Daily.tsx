@@ -28,10 +28,14 @@ import {
   ChevronRight,
   PartyPopper,
 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../hooks/useAuth'
 import type { DailyTodoWithTask } from '../types'
 import toast from 'react-hot-toast'
 
 export default function Daily() {
+  const { user } = useAuth()
+  const qc = useQueryClient()
   const { data: rawTodos = [], isLoading } = useDailyTodos()
   const toggleTodo = useToggleDailyTodo()
   const deleteTodo = useDeleteDailyTodo()
@@ -102,15 +106,29 @@ export default function Daily() {
     }
   }
 
-  const handleDelete = (id: string, title?: string) => {
-    const todoToDelete = todos.find((t) => t.id === id)
+  const handleDelete = (todo: DailyTodoWithTask) => {
+    const queryKey = ['daily_todos', user?.id, todayKey]
+    qc.setQueryData<DailyTodoWithTask[]>(queryKey, (old) =>
+      old ? old.filter((t) => t.id !== todo.id) : []
+    )
+
     showUndo({
-      message: `Deleted "${title || todoToDelete?.title || 'task'}"`,
+      message: `Deleted "${todo.title}"`,
       onUndo: () => {
-        // Undo simply retains the item in the active query cache
+        // Restore to cache on undo
+        qc.setQueryData<DailyTodoWithTask[]>(queryKey, (old) => {
+          if (!old) return [todo]
+          if (old.some((t) => t.id === todo.id)) return old
+          return [...old, todo]
+        })
       },
       onCommit: () => {
-        deleteTodo.mutate(id)
+        deleteTodo.mutate({
+          id: todo.id,
+          taskId: todo.task_id,
+          title: todo.title,
+          habitId: todo.habit_id,
+        })
       },
       ms: 5000,
     })
@@ -216,7 +234,7 @@ export default function Daily() {
                       key={todo.id}
                       todo={todo}
                       onToggle={(id, done) => toggleTodo.mutate({ id, done })}
-                      onDelete={(id) => handleDelete(id, todo.title)}
+                      onDelete={() => handleDelete(todo)}
                       onTap={() => setSelectedTodo(todo)}
                       onMoveTomorrow={handleMoveTomorrow}
                       onToggleMustDo={handleToggleMustDo}
@@ -246,7 +264,7 @@ export default function Daily() {
                       key={todo.id}
                       todo={todo}
                       onToggle={(id, done) => toggleTodo.mutate({ id, done })}
-                      onDelete={(id) => handleDelete(id, todo.title)}
+                      onDelete={() => handleDelete(todo)}
                       onTap={() => setSelectedTodo(todo)}
                       onMoveTomorrow={handleMoveTomorrow}
                       onToggleMustDo={handleToggleMustDo}
@@ -276,7 +294,7 @@ export default function Daily() {
                       key={todo.id}
                       todo={todo}
                       onToggle={(id, done) => toggleTodo.mutate({ id, done })}
-                      onDelete={(id) => handleDelete(id, todo.title)}
+                      onDelete={() => handleDelete(todo)}
                       onTap={() => setSelectedTodo(todo)}
                       onMoveTomorrow={handleMoveTomorrow}
                       onToggleMustDo={handleToggleMustDo}
@@ -306,7 +324,7 @@ export default function Daily() {
                       key={todo.id}
                       todo={todo}
                       onToggle={(id, done) => toggleTodo.mutate({ id, done })}
-                      onDelete={(id) => handleDelete(id, todo.title)}
+                      onDelete={() => handleDelete(todo)}
                       onTap={() => setSelectedTodo(todo)}
                       onMoveTomorrow={handleMoveTomorrow}
                       onToggleMustDo={handleToggleMustDo}
@@ -351,7 +369,7 @@ export default function Daily() {
                         key={todo.id}
                         todo={todo}
                         onToggle={(id, done) => toggleTodo.mutate({ id, done })}
-                        onDelete={(id) => handleDelete(id, todo.title)}
+                        onDelete={() => handleDelete(todo)}
                         onTap={() => setSelectedTodo(todo)}
                         onMoveTomorrow={handleMoveTomorrow}
                         onToggleMustDo={handleToggleMustDo}

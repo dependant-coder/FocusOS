@@ -40,12 +40,13 @@ export default function DailyTodoCard({
   const [showMenu, setShowMenu] = useState(false)
 
   const hasDetails = todo.tasks?.description || todo.tasks?.resources_url
+  const isHabit = todo.type === 'habit'
   const isMustDo = Boolean(todo.must_do)
 
   return (
     <SwipeableItem
       onComplete={() => onToggle(todo.id, !todo.done)}
-      onDelete={() => onDelete(todo.id)}
+      onDelete={isHabit ? () => {} : () => onDelete(todo.id)}
     >
       <motion.div
         layout
@@ -86,11 +87,13 @@ export default function DailyTodoCard({
             className="flex-1 min-w-0 cursor-pointer"
             role="button"
             tabIndex={0}
-            onClick={() => onTap?.(todo)}
+            onClick={() => {
+              if (!isHabit) onTap?.(todo)
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
-                onTap?.(todo)
+                if (!isHabit) onTap?.(todo)
               }
             }}
           >
@@ -176,47 +179,52 @@ export default function DailyTodoCard({
                           </button>
                         )}
 
-                        {onTap && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onTap(todo)
-                              setShowMenu(false)
-                            }}
-                            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors"
-                          >
-                            <Edit2 size={13} className="text-gray-400" />
-                            <span>Edit details</span>
-                          </button>
+                        {/* Non-habit actions only: Edit, Move Tomorrow, Delete */}
+                        {!isHabit && (
+                          <>
+                            {onTap && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onTap(todo)
+                                  setShowMenu(false)
+                                }}
+                                className="flex items-center gap-2.5 w-full px-3.5 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors"
+                              >
+                                <Edit2 size={13} className="text-gray-400" />
+                                <span>Edit details</span>
+                              </button>
+                            )}
+
+                            {onMoveTomorrow && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onMoveTomorrow(todo)
+                                  setShowMenu(false)
+                                }}
+                                className="flex items-center gap-2.5 w-full px-3.5 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors"
+                              >
+                                <ArrowRight size={13} className="text-gray-400" />
+                                <span>Move to Tomorrow</span>
+                              </button>
+                            )}
+
+                            <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDelete(todo.id)
+                                setShowMenu(false)
+                              }}
+                              className="flex items-center gap-2.5 w-full px-3.5 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                            >
+                              <Trash2 size={13} />
+                              <span>Delete</span>
+                            </button>
+                          </>
                         )}
-
-                        {onMoveTomorrow && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onMoveTomorrow(todo)
-                              setShowMenu(false)
-                            }}
-                            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors"
-                          >
-                            <ArrowRight size={13} className="text-gray-400" />
-                            <span>Move to Tomorrow</span>
-                          </button>
-                        )}
-
-                        <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onDelete(todo.id)
-                            setShowMenu(false)
-                          }}
-                          className="flex items-center gap-2.5 w-full px-3.5 py-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
-                        >
-                          <Trash2 size={13} />
-                          <span>Delete</span>
-                        </button>
                       </div>
                     </>
                   )}
