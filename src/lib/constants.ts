@@ -55,6 +55,12 @@ export const CATEGORY_COLORS = {
   },
 } as const
 
+export const CATEGORY_HEX_COLORS: Record<string, string> = {
+  college: '#3b82f6',
+  personal: '#a855f7',
+  skill: '#f59e0b',
+}
+
 // 30 daily motivational quotes
 export const DAILY_QUOTES = [
   { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },

@@ -3,7 +3,8 @@ import { motion, AnimatePresence, type PanInfo } from 'framer-motion'
 import { X } from 'lucide-react'
 
 export interface BottomSheetProps {
-  isOpen: boolean
+  isOpen?: boolean
+  open?: boolean
   onClose: () => void
   children: ReactNode
   title?: string
@@ -14,6 +15,7 @@ export interface BottomSheetProps {
 
 export default function BottomSheet({
   isOpen,
+  open,
   onClose,
   children,
   title,
@@ -21,6 +23,7 @@ export default function BottomSheet({
   maxWidth = 'max-w-lg',
   ariaLabel,
 }: BottomSheetProps) {
+  const isSheetOpen = isOpen ?? open ?? false
   const generatedId = useId()
   const titleId = `sheet-title-${generatedId}`
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -28,7 +31,7 @@ export default function BottomSheet({
 
   // Focus restoration & body scroll lock
   useEffect(() => {
-    if (isOpen) {
+    if (isSheetOpen) {
       previousActiveElementRef.current = document.activeElement as HTMLElement
 
       // iOS safe scroll lock
@@ -67,11 +70,11 @@ export default function BottomSheet({
         }
       }
     }
-  }, [isOpen])
+  }, [isSheetOpen])
 
   // Keyboard navigation: Escape to close & focus trapping
   useEffect(() => {
-    if (!isOpen) return
+    if (!isSheetOpen) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -105,7 +108,7 @@ export default function BottomSheet({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isSheetOpen, onClose])
 
   // Drag-to-dismiss handler
   const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -116,7 +119,7 @@ export default function BottomSheet({
 
   return (
     <AnimatePresence>
-      {isOpen && (
+      {isSheetOpen && (
         <>
           {/* Backdrop */}
           <motion.div

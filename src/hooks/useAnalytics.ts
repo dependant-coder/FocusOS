@@ -1,64 +1,81 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import { subDays, format, eachDayOfInterval } from 'date-fns'
 import { useAuth } from './useAuth'
-import { longestStreak as calculateLongestStreak } from '../lib/habits'
+import { todayLocal, addDaysLocal, parseLocalDate, format } from '../lib/dates'
+import { isHabitDue, longestStreak as calculateLongestStreak } from '../lib/habits'
+import type { Task, Habit, HabitLog } from '../types'
 
-export function useBarChartData() {
+export type AnalyticsRange = 7 | 30 | 90
+
+/** Fetch task completions per day based on tasks.completed_at */
+export function useTaskCompletionTrend(rangeDays: AnalyticsRange = 30) {
   const { user } = useAuth()
+
   return useQuery({
-    queryKey: ['analytics', 'barChart', user?.id],
+    queryKey: ['analytics', 'completionTrend', user?.id, rangeDays],
+    enabled: !!user,
     queryFn: async () => {
       if (!user) return []
 
-      const today = new Date()
-      const sevenDaysAgo = subDays(today, 6)
-      const startDate = format(sevenDaysAgo, 'yyyy-MM-dd')
+      const today = todayLocal()
+      const startDate = addDaysLocal(today, -(rangeDays - 1))
 
-      const { data, error } = await supabase
-        .from('daily_todos')
-        .select('date')
+      // Fetch completed tasks
+      const { data: tasks, error } = await supabase
+        .from('tasks')
+        .select('id, category, completed_at, updated_at, created_at')
         .eq('user_id', user.id)
-        .eq('done', true)
-        .gte('date', startDate)
+        .eq('status', 'done')
 
       if (error) throw error
 
-      const days = eachDayOfInterval({ start: sevenDaysAgo, end: today })
-      const counts: Record<string, number> = {}
-      
-      days.forEach(d => {
-        counts[format(d, 'yyyy-MM-dd')] = 0
-      })
+      // Generate all local days in the range
+      const dayCounts: Record<string, number> = {}
+      let cur = startDate
+      while (cur <= today) {
+        dayCounts[cur] = 0
+        cur = addDaysLocal(cur, 1)
+      }
 
-      data?.forEach(todo => {
-        if (counts[todo.date] !== undefined) {
-          counts[todo.date]++
+      // Tally tasks using local date of completed_at
+      ;(tasks as Task[] ?? []).forEach((t) => {
+        const timestamp = t.completed_at || t.updated_at || t.created_at
+        if (!timestamp) return
+        // Parse timestamp and format to local YYYY-MM-DD
+        const localDate = format(new Date(timestamp), 'yyyy-MM-dd')
+        if (dayCounts[localDate] !== undefined) {
+          dayCounts[localDate]++
         }
       })
 
-      return days.map(d => {
-        const dateStr = format(d, 'yyyy-MM-dd')
+      return Object.entries(dayCounts).map(([dateStr, count]) => {
+        const d = parseLocalDate(dateStr)
         return {
-          date: format(d, 'MMM d'),
-          completed: counts[dateStr],
+          fullDate: dateStr,
+          date: rangeDays === 7 ? format(d, 'EEE') : format(d, 'MMM d'),
+          completed: count,
         }
       })
     },
-    enabled: !!user,
   })
 }
 
-export function useDonutChartData() {
+/** Fetch category split for completed tasks */
+export function useCategoryDistribution(rangeDays: AnalyticsRange = 30) {
   const { user } = useAuth()
+
   return useQuery({
-    queryKey: ['analytics', 'donutChart', user?.id],
+    queryKey: ['analytics', 'categorySplit', user?.id, rangeDays],
+    enabled: !!user,
     queryFn: async () => {
       if (!user) return []
 
-      const { data, error } = await supabase
+      const today = todayLocal()
+      const startDate = addDaysLocal(today, -(rangeDays - 1))
+
+      const { data: tasks, error } = await supabase
         .from('tasks')
-        .select('category')
+        .select('category, completed_at, updated_at, created_at')
         .eq('user_id', user.id)
         .eq('status', 'done')
 
@@ -70,22 +87,32 @@ export function useDonutChartData() {
         skill: 0,
       }
 
-      data?.forEach(task => {
-        if (counts[task.category] !== undefined) {
-          counts[task.category]++
+      ;(tasks as Task[] ?? []).forEach((t) => {
+        const timestamp = t.completed_at || t.updated_at || t.created_at
+        if (!timestamp) return
+        const localDate = format(new Date(timestamp), 'yyyy-MM-dd')
+        if (localDate >= startDate && localDate <= today) {
+          const cat = t.category || 'personal'
+          if (counts[cat] !== undefined) {
+            counts[cat]++
+          } else {
+            counts[cat] = 1
+          }
         }
       })
 
       return Object.entries(counts).map(([name, value]) => ({ name, value }))
     },
-    enabled: !!user,
   })
 }
 
-export function useLineChartData() {
+/** Fetch weekly completion rates over the last 12 weeks */
+export function useWeeklyCompletionTrend() {
   const { user } = useAuth()
+
   return useQuery({
-    queryKey: ['analytics', 'lineChart', user?.id],
+    queryKey: ['analytics', 'weeklyTrend', user?.id],
+    enabled: !!user,
     queryFn: async () => {
       if (!user) return []
 
@@ -94,162 +121,216 @@ export function useLineChartData() {
         .select('week_start, completion_rate')
         .eq('user_id', user.id)
         .order('week_start', { ascending: false })
-        .limit(4)
+        .limit(12)
 
       if (error) throw error
 
-      // Reverse so oldest is first
       const reversed = [...(data || [])].reverse()
-      return reversed.map(review => ({
-        week: format(new Date(review.week_start), 'MMM d'),
-        rate: review.completion_rate || 0,
-      }))
+      return reversed.map((r) => {
+        const d = parseLocalDate(r.week_start)
+        return {
+          week: format(d, 'MMM d'),
+          rate: r.completion_rate ?? 0,
+        }
+      })
     },
-    enabled: !!user,
   })
 }
 
-export function useHabitHeatmapData() {
+/** Frequency-aware habit heatmap */
+export function useHabitHeatmap(rangeDays: AnalyticsRange = 30) {
   const { user } = useAuth()
+
   return useQuery({
-    queryKey: ['analytics', 'habitHeatmap', user?.id],
+    queryKey: ['analytics', 'habitHeatmap', user?.id, rangeDays],
+    enabled: !!user,
     queryFn: async () => {
       if (!user) return []
 
-      const today = new Date()
-      const thirtyDaysAgo = subDays(today, 29)
-      const startDate = format(thirtyDaysAgo, 'yyyy-MM-dd')
+      const today = todayLocal()
+      const startDate = addDaysLocal(today, -(rangeDays - 1))
 
-      // 1. Get all active habits
-      const { data: habits, error: habitsError } = await supabase
+      // 1. Active habits
+      const { data: habits, error: habitsErr } = await supabase
         .from('habits')
-        .select('id, name, icon')
+        .select('*')
         .eq('user_id', user.id)
         .eq('active', true)
         .order('sort_order')
 
-      if (habitsError) throw habitsError
+      if (habitsErr) throw habitsErr
 
-      // 2. Get logs for the last 30 days
-      const { data: logs, error: logsError } = await supabase
+      // 2. Logs within the date range
+      const { data: logs, error: logsErr } = await supabase
         .from('habit_logs')
-        .select('habit_id, date, completed')
+        .select('*')
         .eq('user_id', user.id)
         .gte('date', startDate)
+        .lte('date', today)
 
-      if (logsError) throw logsError
+      if (logsErr) throw logsErr
 
-      const days = eachDayOfInterval({ start: thirtyDaysAgo, end: today }).map(d => format(d, 'yyyy-MM-dd'))
+      // Generate days array
+      const days: string[] = []
+      let cur = startDate
+      while (cur <= today) {
+        days.push(cur)
+        cur = addDaysLocal(cur, 1)
+      }
 
-      return habits.map(habit => {
-        const habitLogs = logs?.filter(l => l.habit_id === habit.id) || []
-        const logMap = new Map(habitLogs.map(l => [l.date, l.completed]))
-        
+      const logMap = new Map<string, boolean>()
+      ;(logs as HabitLog[] ?? []).forEach((l) => {
+        if (l.completed) {
+          logMap.set(`${l.habit_id}_${l.date}`, true)
+        }
+      })
+
+      return (habits as Habit[] ?? []).map((h) => {
+        const dayEntries = days.map((dateStr) => {
+          const isDue = isHabitDue(h, dateStr)
+          const isCompleted = logMap.has(`${h.id}_${dateStr}`)
+          return {
+            date: dateStr,
+            isDue,
+            completed: isCompleted,
+          }
+        })
+
         return {
-          id: habit.id,
-          name: habit.name,
-          icon: habit.icon,
-          days: days.map(d => ({
-            date: d,
-            completed: logMap.get(d) || false
-          }))
+          id: h.id,
+          name: h.name,
+          icon: h.icon || '🎯',
+          days: dayEntries,
         }
       })
     },
-    enabled: !!user,
   })
 }
 
-export function useStatCardsData() {
+/** Stat cards & productivity insights */
+export function useAnalyticsSummary(rangeDays: AnalyticsRange = 30) {
   const { user } = useAuth()
-  return useQuery({
-    queryKey: ['analytics', 'statCards', user?.id],
-    queryFn: async () => {
-      if (!user) return { allTime: 0, longestStreak: 0, bestWeek: 0, mostProductiveDay: 0 }
 
-      // 1. All-time completed tasks
-      const { count: allTime, error: allTimeError } = await supabase
+  return useQuery({
+    queryKey: ['analytics', 'summary', user?.id, rangeDays],
+    enabled: !!user,
+    queryFn: async () => {
+      if (!user) {
+        return {
+          tasksInRange: 0,
+          allTimeCompleted: 0,
+          bestWeekday: null,
+          longestStreak: 0,
+          habitConsistencyRate: 0,
+        }
+      }
+
+      const today = todayLocal()
+      const startDate = addDaysLocal(today, -(rangeDays - 1))
+
+      // 1. Fetch completed tasks
+      const { data: tasks, error: tasksErr } = await supabase
         .from('tasks')
-        .select('*', { count: 'exact', head: true })
+        .select('id, completed_at, updated_at, created_at')
         .eq('user_id', user.id)
         .eq('status', 'done')
-      
-      if (allTimeError) throw allTimeError
 
-      // 2. Best week (max tasks_completed)
-      const { data: bestWeekData, error: bestWeekError } = await supabase
-        .from('weekly_reviews')
-        .select('tasks_completed')
-        .eq('user_id', user.id)
-        .order('tasks_completed', { ascending: false })
-        .limit(1)
-        
-      if (bestWeekError) throw bestWeekError
-      const bestWeek = bestWeekData?.[0]?.tasks_completed || 0
+      if (tasksErr) throw tasksErr
 
-      // 3. Most productive day (max completed in daily_todos)
-      // This is a bit tricky without RPC, so we'll fetch all completed daily_todos and group in memory.
-      // Or we can group by date.
-      const { data: dailyData, error: dailyError } = await supabase
-        .from('daily_todos')
-        .select('date')
-        .eq('user_id', user.id)
-        .eq('done', true)
+      let tasksInRange = 0
+      const weekdayCounts: Record<string, number> = {
+        Monday: 0,
+        Tuesday: 0,
+        Wednesday: 0,
+        Thursday: 0,
+        Friday: 0,
+        Saturday: 0,
+        Sunday: 0,
+      }
 
-      if (dailyError) throw dailyError
-      
-      const dailyCounts: Record<string, number> = {}
-      dailyData?.forEach(todo => {
-        dailyCounts[todo.date] = (dailyCounts[todo.date] || 0) + 1
-      })
-      
-      let mostProductiveDay = 0
-      Object.values(dailyCounts).forEach(count => {
-        if (count > mostProductiveDay) mostProductiveDay = count
+      ;(tasks as Task[] ?? []).forEach((t) => {
+        const ts = t.completed_at || t.updated_at || t.created_at
+        if (!ts) return
+        const d = new Date(ts)
+        const localDate = format(d, 'yyyy-MM-dd')
+        if (localDate >= startDate && localDate <= today) {
+          tasksInRange++
+          const weekdayName = format(d, 'EEEE')
+          if (weekdayCounts[weekdayName] !== undefined) {
+            weekdayCounts[weekdayName]++
+          }
+        }
       })
 
-      // 4. Longest streak (habit logs)
-      // Since it's complex to calculate true global longest streak across all habits without an RPC,
-      // we'll fetch all habit logs that are completed, order by date, and find the longest contiguous run of ANY habit?
-      // Actually "longest streak" usually refers to the max streak across all individual habits.
-      const { data: habitLogs, error: habitLogsError } = await supabase
+      let bestWeekday: string | null = null
+      let maxDayCount = 0
+      Object.entries(weekdayCounts).forEach(([day, count]) => {
+        if (count > maxDayCount) {
+          maxDayCount = count
+          bestWeekday = day
+        }
+      })
+
+      // 2. Habits & streaks
+      const { data: habits } = await supabase
+        .from('habits')
+        .select('*')
+        .eq('user_id', user.id)
+
+      const { data: habitLogs } = await supabase
         .from('habit_logs')
-        .select('habit_id, date')
+        .select('*')
         .eq('user_id', user.id)
         .eq('completed', true)
-        .order('date', { ascending: true })
-
-      if (habitLogsError) throw habitLogsError
-
-      // Fetch habits to apply frequency-aware longest streak
-      const { data: userHabits } = await supabase
-        .from('habits')
-        .select('id, frequency, custom_days, created_at')
-        .eq('user_id', user.id)
-
-      const habitMap = new Map((userHabits ?? []).map((h) => [h.id, h]))
-
-      // Group by habit_id
-      const logsByHabit: Record<string, string[]> = {}
-      habitLogs?.forEach((log) => {
-        if (!logsByHabit[log.habit_id]) logsByHabit[log.habit_id] = []
-        logsByHabit[log.habit_id].push(log.date)
-      })
 
       let longestStreak = 0
+      const habitMap = new Map((habits as Habit[] ?? []).map((h) => [h.id, h]))
+      const logsByHabit: Record<string, string[]> = {}
+      ;(habitLogs as HabitLog[] ?? []).forEach((l) => {
+        if (!logsByHabit[l.habit_id]) logsByHabit[l.habit_id] = []
+        logsByHabit[l.habit_id].push(l.date)
+      })
+
       Object.entries(logsByHabit).forEach(([habitId, dates]) => {
         const habit = habitMap.get(habitId) || { frequency: 'daily' }
-        const max = calculateLongestStreak(habit, dates)
+        const max = calculateLongestStreak(habit as Habit, dates)
         if (max > longestStreak) longestStreak = max
       })
 
+      // Consistency in range
+      let totalDue = 0
+      let totalDone = 0
+      const completedSet = new Set((habitLogs as HabitLog[] ?? []).map((l) => `${l.habit_id}_${l.date}`))
+
+      let cur = startDate
+      while (cur <= today) {
+        for (const h of (habits as Habit[] ?? []).filter((h) => h.active)) {
+          if (isHabitDue(h, cur)) {
+            totalDue++
+            if (completedSet.has(`${h.id}_${cur}`)) {
+              totalDone++
+            }
+          }
+        }
+        cur = addDaysLocal(cur, 1)
+      }
+
+      const habitConsistencyRate = totalDue > 0 ? Math.round((totalDone / totalDue) * 100) : 0
+
       return {
-        allTime: allTime || 0,
-        bestWeek,
-        mostProductiveDay,
-        longestStreak
+        tasksInRange,
+        allTimeCompleted: tasks?.length ?? 0,
+        bestWeekday: maxDayCount > 0 ? bestWeekday : null,
+        longestStreak,
+        habitConsistencyRate,
       }
     },
-    enabled: !!user,
   })
 }
+
+// Backwards compatibility aliases
+export const useBarChartData = useTaskCompletionTrend
+export const useDonutChartData = useCategoryDistribution
+export const useLineChartData = useWeeklyCompletionTrend
+export const useHabitHeatmapData = useHabitHeatmap
+export const useStatCardsData = useAnalyticsSummary
