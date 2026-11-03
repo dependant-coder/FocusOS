@@ -35,7 +35,7 @@ import {
   type Habit,
 } from '../hooks/useHabits'
 import { Check, TrendingUp, Flame, Archive, RefreshCw, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
-import { todayLocal } from '../lib/dates'
+import { todayLocal, addDaysLocal } from '../lib/dates'
 import { isHabitDue, completionRate, currentStreak } from '../lib/habits'
 import { showUndo } from '../lib/undo'
 
@@ -88,10 +88,7 @@ export default function Habits() {
 
   // 2. 30-day consistency rate over due days only
   const monthStart = useMemo(() => {
-    // 30 days ago
-    const d = new Date()
-    d.setDate(d.getDate() - 30)
-    return d.toISOString().slice(0, 10)
+    return addDaysLocal(todayLocal(), -30)
   }, [])
 
   const monthRate = useMemo(() => {

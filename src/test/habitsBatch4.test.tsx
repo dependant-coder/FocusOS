@@ -4,7 +4,7 @@ import Habits from '../pages/Habits'
 import StreakDots from '../components/habits/StreakDots'
 import HabitDetail from '../components/habits/HabitDetail'
 import type { Habit, HabitLog } from '../hooks/useHabits'
-import { todayLocal } from '../lib/dates'
+import { todayLocal, addDaysLocal } from '../lib/dates'
 
 // Mock useAuth
 vi.mock('../hooks/useAuth', () => ({
@@ -260,5 +260,58 @@ describe('Phase 3 Batch 4: Habits (/habits Habits) P3-6', () => {
     fireEvent.click(restoreBtn)
 
     expect(mockRestoreHabitMutate).toHaveBeenCalledWith('h-archived-1')
+  })
+
+  it('monthStart calculation in Habits is TZ-sensitive at 00:30 Asia/Kolkata and exactly 30 days before todayLocal', () => {
+    // 00:30 on 2026-04-15 Asia/Kolkata (which is 19:00 on 2026-04-14 UTC)
+    vi.useFakeTimers()
+    const fakeTime = new Date('2026-04-14T19:00:00.000Z')
+    vi.setSystemTime(fakeTime)
+
+    try {
+      const today = todayLocal()
+      expect(today).toBe('2026-04-15')
+
+      const expectedMonthStart = addDaysLocal(today, -30)
+      expect(expectedMonthStart).toBe('2026-03-16')
+
+      // Buggy toISOString approach would have yielded 2026-03-15
+      const buggyDate = new Date()
+      buggyDate.setDate(buggyDate.getDate() - 30)
+      const buggyMonthStart = buggyDate.toISOString().slice(0, 10)
+      expect(buggyMonthStart).toBe('2026-03-15')
+      expect(expectedMonthStart).not.toBe(buggyMonthStart)
+
+      // Add a habit that was completed on exactly the expectedMonthStart (2026-03-16)
+      mockHabits.push({
+        id: 'h-tz-test',
+        user_id: 'test-user-habits',
+        name: 'Early Morning Run',
+        icon: '🏃',
+        frequency: 'daily',
+        custom_days: null,
+        active: true,
+        sort_order: 0,
+        created_at: '2026-01-01T00:00:00Z',
+      })
+      // Only 1 log in the last 30 days, right on monthStart
+      mockLogs.push({
+        id: 'log-tz-1',
+        habit_id: 'h-tz-test',
+        user_id: 'test-user-habits',
+        date: '2026-03-16',
+        completed: true,
+      })
+
+      render(<Habits />)
+
+      // Rate is calculated using completionRate(h, hCompletedDates, monthStart, todayStr)
+      // Since monthStart is 2026-03-16, the log on 2026-03-16 is counted!
+      // Total days in interval 2026-03-16 to 2026-04-15 is 31 days. 1/31 = 3%
+      expect(screen.getByText('30d Rate')).toBeDefined()
+      expect(screen.getByText('3')).toBeDefined()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
