@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching'
+import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching'
 import { registerRoute, NavigationRoute } from 'workbox-routing'
-import { CacheFirst, NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies'
+import { CacheFirst, NetworkOnly } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 
 declare const self: ServiceWorkerGlobalScope
@@ -13,7 +13,7 @@ cleanupOutdatedCaches()
 precacheAndRoute(self.__WB_MANIFEST || [])
 
 // Fallback to index.html for SPA client navigation except /api routes
-const handler = new StaleWhileRevalidate({ cacheName: 'focusos-navigation' })
+const handler = createHandlerBoundToURL('index.html')
 const navigationRoute = new NavigationRoute(handler, {
   denylist: [/^\/api/],
 })
@@ -72,15 +72,21 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = event.notification.data?.url || '/daily'
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
       for (const client of clientList) {
         if (client.url.includes(self.location.origin) && 'focus' in client) {
-          client.navigate(targetUrl)
-          return client.focus()
+          try {
+            await client.navigate(targetUrl)
+            return await client.focus()
+          } catch {
+            if (self.clients.openWindow) {
+              return await self.clients.openWindow(targetUrl)
+            }
+          }
         }
       }
       if (self.clients.openWindow) {
-        return self.clients.openWindow(targetUrl)
+        return await self.clients.openWindow(targetUrl)
       }
     })
   )

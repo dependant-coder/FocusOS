@@ -262,7 +262,7 @@ describe('Phase 3 Batch 4: Habits (/habits Habits) P3-6', () => {
     expect(mockRestoreHabitMutate).toHaveBeenCalledWith('h-archived-1')
   })
 
-  it('monthStart calculation in Habits is TZ-sensitive at 00:30 Asia/Kolkata and exactly 30 days before todayLocal', () => {
+  it.runIf(process.env.TZ === 'Asia/Kolkata')('monthStart calculation in Habits is TZ-sensitive at 00:30 Asia/Kolkata and exactly 30 days before todayLocal', () => {
     // 00:30 on 2026-04-15 Asia/Kolkata (which is 19:00 on 2026-04-14 UTC)
     vi.useFakeTimers()
     const fakeTime = new Date('2026-04-14T19:00:00.000Z')

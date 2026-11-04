@@ -25,6 +25,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useProfile, useUpdateProfile, useExportData, useExportCsv } from '../hooks/useSettings'
 import { useTheme } from '../hooks/useTheme'
 import type { Theme } from '../lib/theme'
+import { safeStorage } from '../lib/safeStorage'
 import {
   subscribeToPush,
   unsubscribeFromPush,
@@ -94,10 +95,10 @@ export default function Settings() {
 
   // Appearance fields
   const [reduceMotion, setReduceMotion] = useState(() => {
-    return localStorage.getItem('focusos_reduce_motion') === 'true'
+    return safeStorage.getItem('focusos_reduce_motion') === 'true'
   })
   const [showDailyQuote, setShowDailyQuote] = useState(() => {
-    const saved = localStorage.getItem('focusos_show_quote')
+    const saved = safeStorage.getItem('focusos_show_quote')
     return saved === null ? true : saved === 'true'
   })
 
@@ -185,13 +186,13 @@ export default function Settings() {
   // Appearance handlers
   const handleReduceMotionToggle = (checked: boolean) => {
     setReduceMotion(checked)
-    localStorage.setItem('focusos_reduce_motion', String(checked))
+    safeStorage.setItem('focusos_reduce_motion', String(checked))
     window.dispatchEvent(new Event('focusos-reduce-motion-change'))
   }
 
   const handleDailyQuoteToggle = (checked: boolean) => {
     setShowDailyQuote(checked)
-    localStorage.setItem('focusos_show_quote', String(checked))
+    safeStorage.setItem('focusos_show_quote', String(checked))
   }
 
   // Password reset via Supabase auth

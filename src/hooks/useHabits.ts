@@ -4,6 +4,8 @@ import { useAuth } from './useAuth'
 import { todayLocal, addDaysLocal } from '../lib/dates'
 import type { DailyTodo } from '../types'
 import toast from 'react-hot-toast'
+import { randomUUID } from '../lib/uuid'
+import { MUTATION_KEYS } from '../lib/mutationDefaults'
 
 export interface Habit {
   id: string
@@ -103,7 +105,7 @@ export function useCreateHabit() {
       custom_days?: string[]
       sort_order?: number
     }) => {
-      const id = habit.id || crypto.randomUUID()
+      const id = habit.id || randomUUID()
       const { data, error } = await supabase
         .from('habits')
         .upsert(
@@ -286,6 +288,7 @@ export function useToggleHabitLog() {
   const { user } = useAuth()
 
   return useMutation({
+    mutationKey: MUTATION_KEYS.toggleHabit,
     mutationFn: async ({
       habitId,
       date,
@@ -330,7 +333,7 @@ export function useToggleHabitLog() {
         return [
           ...old,
           {
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             habit_id: habitId,
             user_id: user!.id,
             date,

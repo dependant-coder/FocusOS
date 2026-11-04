@@ -29,6 +29,7 @@ async function fetchCompletedTasksInRange(
       .eq('user_id', uid)
       .eq('status', 'done')
       .or(`completed_at.gte.${rangeStartIso},and(completed_at.is.null,updated_at.gte.${rangeStartIso})`)
+      .order('id', { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
 
     if (error) throw error

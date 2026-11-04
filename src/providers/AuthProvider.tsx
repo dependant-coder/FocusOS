@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AuthContext, type AuthSession, type AuthUser } from '../context/AuthContext'
+import { safeStorage } from '../lib/safeStorage'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession>(null)
@@ -35,12 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else if (event === 'SIGNED_OUT') {
         queryClient.clear()
-        try {
-          localStorage.removeItem('focusos-focus-session')
-          localStorage.removeItem('FOCUSOS_OFFLINE_CACHE')
-        } catch {
-          // ignore storage error
-        }
+        safeStorage.removeItem('focusos-focus-session')
+        safeStorage.removeItem('FOCUSOS_OFFLINE_CACHE')
         navigate('/auth')
       }
     })

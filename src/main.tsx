@@ -1,18 +1,19 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
 import { Toaster, toast } from 'react-hot-toast'
 import { registerSW } from 'virtual:pwa-register'
 import { AuthProvider } from './providers/AuthProvider'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
+import { safeStorage } from './lib/safeStorage'
+import { registerMutationDefaults } from './lib/mutationDefaults'
 import App from './App'
 import './index.css'
 
-import { persistQueryClient } from '@tanstack/react-query-persist-client'
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister'
-
-const queryClient = new QueryClient({
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
@@ -27,26 +28,30 @@ const queryClient = new QueryClient({
   },
 })
 
-// Configure offline query persistence (P2-5)
-if (typeof window !== 'undefined') {
-  const persister = createSyncStoragePersister({
-    storage: window.localStorage,
-    key: 'FOCUSOS_OFFLINE_CACHE',
-  })
+// Register core offline mutation defaults so paused mutations resume cleanly
+registerMutationDefaults(queryClient)
 
-  persistQueryClient({
-    queryClient: queryClient as unknown as Parameters<typeof persistQueryClient>[0]['queryClient'],
-    persister,
-    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
-    dehydrateOptions: {
-      shouldDehydrateQuery: (query) => {
-        const queryKey = query.queryKey[0]
-        return ['tasks', 'daily_todos', 'habits', 'habit_logs', 'profile'].includes(
-          queryKey as string
-        )
-      },
+// Configure offline query & mutation persister
+const persister = createSyncStoragePersister({
+  storage: typeof window !== 'undefined' ? safeStorage : undefined,
+  key: 'FOCUSOS_OFFLINE_CACHE',
+})
+
+const appVersionString = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0-dev'
+
+export const persistOptions = {
+  persister,
+  buster: appVersionString,
+  maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+  dehydrateOptions: {
+    shouldDehydrateQuery: (query: { queryKey: readonly unknown[] }) => {
+      const queryKey = query.queryKey[0]
+      return ['tasks', 'daily_todos', 'habits', 'habit_logs', 'profile'].includes(
+        queryKey as string
+      )
     },
-  })
+    shouldDehydrateMutation: () => true, // Persist paused mutations across reload
+  },
 }
 
 // Register Workbox PWA service worker with reload notification prompt
@@ -80,7 +85,13 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={persistOptions}
+        onSuccess={() => {
+          queryClient.resumePausedMutations()
+        }}
+      >
         <BrowserRouter>
           <AuthProvider>
             <App />
@@ -108,7 +119,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             />
           </AuthProvider>
         </BrowserRouter>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>
 )

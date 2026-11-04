@@ -18,6 +18,7 @@ import {
 import { showUndo } from '../lib/undo'
 import { todayLocal, addDaysLocal } from '../lib/dates'
 import { PRIORITY_ORDER } from '../lib/constants'
+import { safeStorage } from '../lib/safeStorage'
 import {
   Star,
   Crosshair,
@@ -72,16 +73,12 @@ export default function Daily() {
 
   // Check once-per-day 100% completion celebration
   const celebrationStorageKey = `focusos-celebrated-${todayKey}`
-  const alreadyCelebrated = typeof window !== 'undefined' && Boolean(localStorage.getItem(celebrationStorageKey))
+  const alreadyCelebrated = Boolean(safeStorage.getItem(celebrationStorageKey))
   const showCelebrationBanner = allCompleted && !alreadyCelebrated && !celebrationDismissed
 
   useEffect(() => {
     if (showCelebrationBanner) {
-      try {
-        localStorage.setItem(celebrationStorageKey, '1')
-      } catch {
-        // Safe fallback
-      }
+      safeStorage.setItem(celebrationStorageKey, '1')
     }
   }, [showCelebrationBanner, celebrationStorageKey])
 
@@ -89,7 +86,7 @@ export default function Daily() {
   useEffect(() => {
     if (isLoading) return
     const planStorageKey = `focusos-plan-${todayKey}`
-    const alreadyPlanned = Boolean(localStorage.getItem(planStorageKey))
+    const alreadyPlanned = Boolean(safeStorage.getItem(planStorageKey))
     const hasCarriedOver = todos.some((t) => (t.carry_over || t.carry_count > 0) && !t.done)
 
     if (hasCarriedOver && !alreadyPlanned) {
@@ -99,11 +96,7 @@ export default function Daily() {
 
   const handleClosePlan = () => {
     setIsPlanOpen(false)
-    try {
-      localStorage.setItem(`focusos-plan-${todayKey}`, '1')
-    } catch {
-      // Ignore storage errors
-    }
+    safeStorage.setItem(`focusos-plan-${todayKey}`, '1')
   }
 
   const handleDelete = (todo: DailyTodoWithTask) => {

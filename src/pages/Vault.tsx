@@ -22,6 +22,7 @@ import type { Task, Priority } from '../types'
 import { PRIORITY_ORDER } from '../lib/constants'
 import { todayLocal, endOfWeekLocal } from '../lib/dates'
 import { showUndo } from '../lib/undo'
+import { safeStorage } from '../lib/safeStorage'
 import { VaultSkeleton } from '../components/ui/Skeleton'
 import { EmptyState } from '../components/ui/EmptyState'
 import {
@@ -65,9 +66,8 @@ const DEFAULT_PREFS: VaultPreferences = {
 const BASE_CATEGORIES: CategoryFilter[] = ['all', 'college', 'personal', 'skill']
 
 function loadSavedPrefs(): VaultPreferences {
-  if (typeof window === 'undefined') return { ...DEFAULT_PREFS }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = safeStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULT_PREFS }
     const parsed = JSON.parse(raw) as Partial<VaultPreferences>
     return {
@@ -118,7 +118,10 @@ export default function Vault() {
   const [showPriorityPicker, setShowPriorityPicker] = useState(false)
 
   const qc = useQueryClient()
-  const { data: rawTasks = [], isLoading } = useTasks()
+  const { data: rawTasks = [], isLoading } = useTasks({
+    includeDone: statusFilter === 'done' || statusFilter === 'all',
+    status: statusFilter === 'done' ? 'done' : undefined,
+  })
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
@@ -147,7 +150,7 @@ export default function Vault() {
         sortBy,
         groupBy,
       }
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
+      safeStorage.setItem(STORAGE_KEY, JSON.stringify(prefs))
     } catch {
       // Safe fallback
     }

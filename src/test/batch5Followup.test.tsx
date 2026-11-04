@@ -186,43 +186,67 @@ describe('Phase 3 Batch 5 Follow-up Tests', () => {
   })
 
   describe('4. useSettings paginated exports (>1000 rows) and error handling', () => {
-    it('paginates across pages of 1000 rows with .range() until fewer rows return', async () => {
+    it('paginates across pages of 1000 rows with .range() until fewer rows return with deterministic id ordering', async () => {
       // Simulate table with 2500 rows across 3 pages: [1000, 1000, 500]
-      const page1 = Array.from({ length: 1000 }, (_, i) => ({ id: `task-${i}`, title: `Task ${i}` }))
-      const page2 = Array.from({ length: 1000 }, (_, i) => ({ id: `task-${1000 + i}`, title: `Task ${1000 + i}` }))
-      const page3 = Array.from({ length: 500 }, (_, i) => ({ id: `task-${2000 + i}`, title: `Task ${2000 + i}` }))
+      const allExpectedIds = Array.from({ length: 2500 }, (_, i) => `task-${String(i).padStart(4, '0')}`)
+      const page1 = allExpectedIds.slice(0, 1000).map((id, i) => ({ id, title: `Task ${i}` }))
+      const page2 = allExpectedIds.slice(1000, 2000).map((id, i) => ({ id, title: `Task ${1000 + i}` }))
+      const page3 = allExpectedIds.slice(2000, 2500).map((id, i) => ({ id, title: `Task ${2000 + i}` }))
 
+      let orderedCorrectly = false
       const selectMock = vi.fn().mockReturnThis()
       const eqMock = vi.fn().mockReturnThis()
-      const rangeMock = vi.fn()
-
-      rangeMock.mockResolvedValueOnce({ data: page1, error: null })
-      rangeMock.mockResolvedValueOnce({ data: page2, error: null })
-      rangeMock.mockResolvedValueOnce({ data: page3, error: null })
+      const orderMock = vi.fn().mockImplementation((col: string, opts?: { ascending?: boolean }) => {
+        if (col === 'id' && opts?.ascending === true) {
+          orderedCorrectly = true
+        }
+        return { range: rangeMock }
+      })
+      const rangeMock = vi.fn().mockImplementation((from: number, _to: number) => {
+        if (!orderedCorrectly) {
+          // Without deterministic ordering by id, non-deterministic data with duplicates/missing is returned
+          return Promise.resolve({ data: page1, error: null })
+        }
+        if (from === 0) return Promise.resolve({ data: page1, error: null })
+        if (from === 1000) return Promise.resolve({ data: page2, error: null })
+        if (from === 2000) return Promise.resolve({ data: page3, error: null })
+        return Promise.resolve({ data: [], error: null })
+      })
 
       vi.spyOn(supabase, 'from').mockReturnValue({
         select: selectMock,
         eq: eqMock,
+        order: orderMock,
         range: rangeMock,
       } as any)
 
-      const rows = await fetchAllUserRows('tasks', 'test-user-b5f')
+      const rows = await fetchAllUserRows<{ id: string; title: string }>('tasks', 'test-user-b5f')
 
       expect(rows).toHaveLength(2500)
+      expect(orderMock).toHaveBeenCalledWith('id', { ascending: true })
       expect(rangeMock).toHaveBeenCalledTimes(3)
       expect(rangeMock).toHaveBeenNthCalledWith(1, 0, 999)
       expect(rangeMock).toHaveBeenNthCalledWith(2, 1000, 1999)
       expect(rangeMock).toHaveBeenNthCalledWith(3, 2000, 2999)
+
+      // Assert no duplicates
+      const uniqueIds = new Set(rows.map((r) => r.id))
+      expect(uniqueIds.size).toBe(2500)
+
+      // Assert no missing rows: every row from 0 to 2499 is present in order
+      expect(rows.map((r) => r.id)).toEqual(allExpectedIds)
     })
 
     it('throws when supabase returns an error during export query', async () => {
       const selectMock = vi.fn().mockReturnThis()
       const eqMock = vi.fn().mockReturnThis()
+      const orderMock = vi.fn().mockReturnThis()
       const rangeMock = vi.fn().mockResolvedValue({ data: null, error: new Error('Database connection failed') })
 
       vi.spyOn(supabase, 'from').mockReturnValue({
         select: selectMock,
         eq: eqMock,
+        order: orderMock,
         range: rangeMock,
       } as any)
 

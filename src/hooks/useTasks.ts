@@ -5,33 +5,74 @@ import { PRIORITY_ORDER } from '../lib/constants'
 import { todayLocal } from '../lib/dates'
 import toast from 'react-hot-toast'
 import { useAuth } from './useAuth'
+import { randomUUID } from '../lib/uuid'
+import { MUTATION_KEYS } from '../lib/mutationDefaults'
 
-// Fetch all tasks with optional filters
-export function useTasks(filters?: TaskFilters) {
+// Fetch tasks with server-side pagination (.range())
+// Paginates active tasks (status != 'done') by default.
+// Fetches done tasks lazily/paginated only when Done filter is selected.
+export function useTasks(filters?: TaskFilters & { includeDone?: boolean }) {
   const { user } = useAuth()
 
   return useQuery({
     queryKey: ['tasks', user?.id, filters],
     enabled: !!user,
     queryFn: async () => {
-      let q = supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', user!.id)
-        .order('created_at', { ascending: false })
+      const PAGE_SIZE = 1000
 
-      if (filters?.category) q = q.eq('category', filters.category)
-      if (filters?.overdue) q = q.eq('is_overdue', true)
-      if (filters?.status) q = q.eq('status', filters.status)
+      const fetchPages = async (statusMode: 'active' | 'done' | 'all'): Promise<Task[]> => {
+        const rows: Task[] = []
+        let from = 0
 
-      const { data, error } = await q
-      if (error) throw error
+        while (true) {
+          let q = supabase
+            .from('tasks')
+            .select('*')
+            .eq('user_id', user!.id)
 
-      // Client-side priority sort since Supabase sorts alphabetically
-      return (data as Task[]).sort((a, b) => {
+          if (statusMode === 'active') {
+            q = q.neq('status', 'done')
+          } else if (statusMode === 'done') {
+            q = q.eq('status', 'done')
+          }
+
+          if (filters?.category) q = q.eq('category', filters.category)
+          if (filters?.overdue) q = q.eq('is_overdue', true)
+
+          const { data, error } = await q
+            .order('id', { ascending: true })
+            .range(from, from + PAGE_SIZE - 1)
+
+          if (error) throw error
+          if (!data || data.length === 0) break
+
+          rows.push(...(data as Task[]))
+          if (data.length < PAGE_SIZE) break
+          from += PAGE_SIZE
+        }
+
+        return rows
+      }
+
+      let allTasks: Task[]
+      if (filters?.status === 'done') {
+        allTasks = await fetchPages('done')
+      } else if (filters?.includeDone || (filters?.status as string) === 'all') {
+        allTasks = await fetchPages('all')
+      } else {
+        // Default: active tasks only
+        allTasks = await fetchPages('active')
+      }
+
+      // Client-side priority sort
+      return allTasks.sort((a, b) => {
         const pa = PRIORITY_ORDER[a.priority as keyof typeof PRIORITY_ORDER] ?? 99
         const pb = PRIORITY_ORDER[b.priority as keyof typeof PRIORITY_ORDER] ?? 99
-        return pa - pb
+        if (pa !== pb) return pa - pb
+        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date)
+        if (a.due_date) return -1
+        if (b.due_date) return 1
+        return new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime()
       })
     },
     staleTime: 30_000,
@@ -42,11 +83,12 @@ export function useTasks(filters?: TaskFilters) {
 export function useCreateTask() {
   const qc = useQueryClient()
   return useMutation({
+    mutationKey: MUTATION_KEYS.createTask,
     mutationFn: async (task: Omit<TaskInsert, 'user_id'>) => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Not authenticated')
 
-      const id = task.id || crypto.randomUUID()
+      const id = task.id || randomUUID()
       const { data, error } = await supabase
         .from('tasks')
         .upsert({ ...task, id, user_id: user.id }, { ignoreDuplicates: true })
@@ -69,6 +111,7 @@ export function useCreateTask() {
 export function useUpdateTask() {
   const qc = useQueryClient()
   return useMutation({
+    mutationKey: MUTATION_KEYS.updateTask,
     mutationFn: async ({ id, ...updates }: TaskUpdate & { id: string }) => {
       const { data, error } = await supabase
         .from('tasks')
@@ -173,6 +216,7 @@ export function useDeleteTask() {
   const { user } = useAuth()
 
   return useMutation({
+    mutationKey: MUTATION_KEYS.deleteTask,
     mutationFn: async (id: string) => {
       const today = todayLocal()
       // Deleting a task cascades via SET NULL on daily_todos.task_id;

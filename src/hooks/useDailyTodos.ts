@@ -7,6 +7,8 @@ import { todayLocal } from '../lib/dates'
 import type { DailyTodo, DailyTodoInsert } from '../types'
 import type { HabitLog } from './useHabits'
 import toast from 'react-hot-toast'
+import { randomUUID } from '../lib/uuid'
+import { MUTATION_KEYS } from '../lib/mutationDefaults'
 
 /** Fetch all daily_todos for today, with joined task details */
 export function useDailyTodos() {
@@ -60,7 +62,8 @@ export function useToggleDailyTodo() {
   const { user } = useAuth()
 
   return useMutation({
-    mutationFn: async ({ id, done }: { id: string; done: boolean }) => {
+    mutationKey: MUTATION_KEYS.toggleDailyTodo,
+    mutationFn: async ({ id, done }: { id: string; done: boolean; habitId?: string | null; date?: string | null }) => {
       const today = todayLocal()
       const key = ['daily_todos', user?.id, today]
       const cached = qc.getQueryData<DailyTodo[]>(key)
@@ -109,7 +112,7 @@ export function useToggleDailyTodo() {
           return [
             ...old,
             {
-              id: crypto.randomUUID(),
+              id: randomUUID(),
               habit_id: habitId,
               user_id: user.id,
               date: item.date || today,
@@ -142,8 +145,9 @@ export function useCreateAdhocTodo() {
   const { user } = useAuth()
 
   return useMutation({
+    mutationKey: MUTATION_KEYS.createAdhocTodo,
     mutationFn: async (title: string) => {
-      const id = crypto.randomUUID()
+      const id = randomUUID()
       const insert: DailyTodoInsert = {
         id,
         user_id: user!.id,

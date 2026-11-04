@@ -8,6 +8,7 @@ import { ThemeProvider } from './providers/ThemeProvider'
 import { RequireAuth } from './components/auth/RequireAuth'
 import AppLayout from './components/layout/AppLayout'
 import { PageTransition } from './components/layout/PageTransition'
+import { safeStorage } from './lib/safeStorage'
 
 // Lazy-loaded pages
 const AuthPage = lazy(() => import('./pages/Auth'))
@@ -46,7 +47,7 @@ function AuthenticatedApp() {
 export default function App() {
   const { user, loading } = useAuth()
   const [reduceMotionPref, setReduceMotionPref] = useState(() => {
-    return localStorage.getItem('focusos_reduce_motion') === 'true'
+    return safeStorage.getItem('focusos_reduce_motion') === 'true'
   })
 
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function App() {
     }
 
     const handleCustomChange = () => {
-      const val = localStorage.getItem('focusos_reduce_motion') === 'true'
+      const val = safeStorage.getItem('focusos_reduce_motion') === 'true'
       setReduceMotionPref(val)
       applyClass(val)
     }

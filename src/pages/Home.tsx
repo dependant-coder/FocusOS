@@ -23,6 +23,7 @@ import { useTasks } from '../hooks/useTasks'
 import { useHabits, useHabitLogs, useToggleHabitLog } from '../hooks/useHabits'
 import { isHabitDue } from '../lib/habits'
 import { DAILY_QUOTES, PRIORITY_ORDER, type Priority, PRIORITY_CONFIG } from '../lib/constants'
+import { safeStorage } from '../lib/safeStorage'
 import { getGreeting, format, todayLocal, getDayOfYear } from '../lib/dates'
 import { supabase } from '../lib/supabase'
 
@@ -81,10 +82,7 @@ export default function Home() {
   const todayFormatted = format(new Date(), 'EEEE, MMMM d')
 
   // Quote
-  const showQuote =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('focusos_show_quote') !== 'false'
-      : true
+  const showQuote = safeStorage.getItem('focusos_show_quote') !== 'false'
   const dayOfYear = getDayOfYear(new Date())
   const quote = DAILY_QUOTES[dayOfYear % DAILY_QUOTES.length]
 

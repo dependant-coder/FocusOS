@@ -1,5 +1,6 @@
 import toast from 'react-hot-toast'
 import { RotateCcw } from 'lucide-react'
+import { randomUUID } from './uuid'
 
 export interface ShowUndoOptions {
   message: string
@@ -58,7 +59,7 @@ export function showUndo({
   onCommit,
   ms = 5000,
 }: ShowUndoOptions): { id: string; undo: () => void; commit: () => void } {
-  const commitId = crypto.randomUUID()
+  const commitId = randomUUID()
 
   let toastId = ''
 

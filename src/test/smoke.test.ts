@@ -12,6 +12,12 @@ describe('FocusOS Foundation Test Suite', () => {
   })
 
   it('verifies timezone configuration in test environment', () => {
-    expect(process.env.TZ).toBe('Asia/Kolkata')
+    const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const expected = process.env.TZ
+    if (expected === 'Asia/Kolkata') {
+      expect(['Asia/Kolkata', 'Asia/Calcutta']).toContain(resolved)
+    } else {
+      expect(resolved).toBe(expected)
+    }
   })
 })

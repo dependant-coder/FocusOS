@@ -2,9 +2,11 @@ export type Theme = 'light' | 'dark' | 'system'
 
 export const THEME_STORAGE_KEY = 'focusos-theme'
 
+import { safeStorage } from './safeStorage'
+
 export function getStoredTheme(): Theme {
   try {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY)
+    const stored = safeStorage.getItem(THEME_STORAGE_KEY)
     if (stored === 'light' || stored === 'dark' || stored === 'system') {
       return stored
     }
@@ -37,11 +39,7 @@ export function applyTheme(theme: Theme): boolean {
 }
 
 export function setTheme(theme: Theme): void {
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, theme)
-  } catch {
-    // Ignore storage errors
-  }
+  safeStorage.setItem(THEME_STORAGE_KEY, theme)
   applyTheme(theme)
 }
 

@@ -40,3 +40,7 @@ export interface TaskFilters {
 }
 
 export type SortField = 'priority' | 'due_date' | 'created_at'
+
+declare global {
+  const __APP_VERSION__: string
+}

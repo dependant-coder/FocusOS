@@ -5,6 +5,7 @@ import { todayLocal, addDaysLocal, endOfWeekLocal } from '../lib/dates'
 import { isHabitDue } from '../lib/habits'
 import type { WeeklyReview, Habit } from '../types'
 import toast from 'react-hot-toast'
+import { randomUUID } from '../lib/uuid'
 
 export interface WeeklyReviewWithLive extends WeeklyReview {
   isLive?: boolean
@@ -262,7 +263,7 @@ export function usePlanNextWeek() {
       const taskInserts = items
         .filter((t) => t.trim().length > 0)
         .map((title) => ({
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           user_id: user.id,
           title: title.trim(),
           due_date: nextMonday,

@@ -1,9 +1,22 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { execSync } from 'child_process'
+import pkg from './package.json'
+
+let commitSha = 'dev'
+try {
+  commitSha = execSync('git rev-parse --short HEAD').toString().trim()
+} catch {
+  // fallback
+}
+const appVersion = `${pkg.version}-${commitSha}`
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(appVersion),
+  },
   server: {
     host: '0.0.0.0',
     port: 3000,
@@ -49,7 +62,7 @@ export default defineConfig({
             purpose: 'any',
           },
           {
-            src: '/pwa-512x512.png',
+            src: '/pwa-maskable-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

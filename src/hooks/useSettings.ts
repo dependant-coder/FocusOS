@@ -77,6 +77,7 @@ export async function fetchAllUserRows<T = Record<string, unknown>>(
       .from(table)
       .select('*')
       .eq('user_id', uid)
+      .order('id', { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
 
     if (error) throw error
