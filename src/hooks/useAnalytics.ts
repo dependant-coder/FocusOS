@@ -7,6 +7,41 @@ import type { Task, Habit, HabitLog } from '../types'
 
 export type AnalyticsRange = 7 | 30 | 90
 
+const PAGE_SIZE = 1000
+
+/**
+ * Fetch completed tasks in range using completed_at >= rangeStartIso,
+ * falling back to updated_at when completed_at is null via .or().
+ * Paginates with .range() in pages of 1000.
+ */
+async function fetchCompletedTasksInRange(
+  uid: string,
+  rangeStartIso: string,
+  columns: string
+): Promise<Partial<Task>[]> {
+  const allTasks: Partial<Task>[] = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select(columns)
+      .eq('user_id', uid)
+      .eq('status', 'done')
+      .or(`completed_at.gte.${rangeStartIso},and(completed_at.is.null,updated_at.gte.${rangeStartIso})`)
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) throw error
+    if (!data || data.length === 0) break
+
+    allTasks.push(...(data as Partial<Task>[]))
+    if (data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+
+  return allTasks
+}
+
 /** Fetch task completions per day based on tasks.completed_at */
 export function useTaskCompletionTrend(rangeDays: AnalyticsRange = 30) {
   const { user } = useAuth()
@@ -19,15 +54,14 @@ export function useTaskCompletionTrend(rangeDays: AnalyticsRange = 30) {
 
       const today = todayLocal()
       const startDate = addDaysLocal(today, -(rangeDays - 1))
+      const rangeStartIso = new Date(`${startDate}T00:00:00`).toISOString()
 
-      // Fetch completed tasks
-      const { data: tasks, error } = await supabase
-        .from('tasks')
-        .select('id, category, completed_at, updated_at, created_at')
-        .eq('user_id', user.id)
-        .eq('status', 'done')
-
-      if (error) throw error
+      // Fetch completed tasks within range
+      const tasks = await fetchCompletedTasksInRange(
+        user.id,
+        rangeStartIso,
+        'id, category, completed_at, updated_at, created_at'
+      )
 
       // Generate all local days in the range
       const dayCounts: Record<string, number> = {}
@@ -37,11 +71,10 @@ export function useTaskCompletionTrend(rangeDays: AnalyticsRange = 30) {
         cur = addDaysLocal(cur, 1)
       }
 
-      // Tally tasks using local date of completed_at
-      ;(tasks as Task[] ?? []).forEach((t) => {
+      // Tally tasks using local date of completed_at (or fallback to updated_at / created_at)
+      tasks.forEach((t) => {
         const timestamp = t.completed_at || t.updated_at || t.created_at
         if (!timestamp) return
-        // Parse timestamp and format to local YYYY-MM-DD
         const localDate = format(new Date(timestamp), 'yyyy-MM-dd')
         if (dayCounts[localDate] !== undefined) {
           dayCounts[localDate]++
@@ -72,14 +105,13 @@ export function useCategoryDistribution(rangeDays: AnalyticsRange = 30) {
 
       const today = todayLocal()
       const startDate = addDaysLocal(today, -(rangeDays - 1))
+      const rangeStartIso = new Date(`${startDate}T00:00:00`).toISOString()
 
-      const { data: tasks, error } = await supabase
-        .from('tasks')
-        .select('category, completed_at, updated_at, created_at')
-        .eq('user_id', user.id)
-        .eq('status', 'done')
-
-      if (error) throw error
+      const tasks = await fetchCompletedTasksInRange(
+        user.id,
+        rangeStartIso,
+        'category, completed_at, updated_at, created_at'
+      )
 
       const counts: Record<string, number> = {
         college: 0,
@@ -87,7 +119,7 @@ export function useCategoryDistribution(rangeDays: AnalyticsRange = 30) {
         skill: 0,
       }
 
-      ;(tasks as Task[] ?? []).forEach((t) => {
+      tasks.forEach((t) => {
         const timestamp = t.completed_at || t.updated_at || t.created_at
         if (!timestamp) return
         const localDate = format(new Date(timestamp), 'yyyy-MM-dd')
@@ -106,7 +138,7 @@ export function useCategoryDistribution(rangeDays: AnalyticsRange = 30) {
   })
 }
 
-/** Fetch weekly completion rates over the last 12 weeks */
+/** Fetch weekly completion rates over the last 12 weeks, skipping weeks where completion_rate is null */
 export function useWeeklyCompletionTrend() {
   const { user } = useAuth()
 
@@ -120,17 +152,22 @@ export function useWeeklyCompletionTrend() {
         .from('weekly_reviews')
         .select('week_start, completion_rate')
         .eq('user_id', user.id)
+        .not('completion_rate', 'is', null)
         .order('week_start', { ascending: false })
         .limit(12)
 
       if (error) throw error
 
-      const reversed = [...(data || [])].reverse()
+      // Skip weeks where completion_rate is null instead of plotting 0
+      const validReviews = (data || []).filter(
+        (r) => r.completion_rate !== null && r.completion_rate !== undefined
+      )
+      const reversed = [...validReviews].reverse()
       return reversed.map((r) => {
         const d = parseLocalDate(r.week_start)
         return {
           week: format(d, 'MMM d'),
-          rate: r.completion_rate ?? 0,
+          rate: r.completion_rate as number,
         }
       })
     },
@@ -227,15 +264,23 @@ export function useAnalyticsSummary(rangeDays: AnalyticsRange = 30) {
 
       const today = todayLocal()
       const startDate = addDaysLocal(today, -(rangeDays - 1))
+      const rangeStartIso = new Date(`${startDate}T00:00:00`).toISOString()
 
-      // 1. Fetch completed tasks
-      const { data: tasks, error: tasksErr } = await supabase
+      // 1. Fetch completed tasks in range
+      const tasks = await fetchCompletedTasksInRange(
+        user.id,
+        rangeStartIso,
+        'id, completed_at, updated_at, created_at'
+      )
+
+      // 2. Fetch all-time completed count without fetching all rows
+      const { count: allTimeCount, error: countErr } = await supabase
         .from('tasks')
-        .select('id, completed_at, updated_at, created_at')
+        .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .eq('status', 'done')
 
-      if (tasksErr) throw tasksErr
+      if (countErr) throw countErr
 
       let tasksInRange = 0
       const weekdayCounts: Record<string, number> = {
@@ -248,7 +293,7 @@ export function useAnalyticsSummary(rangeDays: AnalyticsRange = 30) {
         Sunday: 0,
       }
 
-      ;(tasks as Task[] ?? []).forEach((t) => {
+      tasks.forEach((t) => {
         const ts = t.completed_at || t.updated_at || t.created_at
         if (!ts) return
         const d = new Date(ts)
@@ -319,7 +364,7 @@ export function useAnalyticsSummary(rangeDays: AnalyticsRange = 30) {
 
       return {
         tasksInRange,
-        allTimeCompleted: tasks?.length ?? 0,
+        allTimeCompleted: allTimeCount ?? 0,
         bestWeekday: maxDayCount > 0 ? bestWeekday : null,
         longestStreak,
         habitConsistencyRate,

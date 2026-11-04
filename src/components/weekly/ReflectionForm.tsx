@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import type { WeeklyReviewWithLive } from '../../hooks/useWeekly'
 import { useUpdateWeekly, usePlanNextWeek } from '../../hooks/useWeekly'
@@ -20,27 +20,32 @@ export function ReflectionForm({ review }: { review: WeeklyReviewWithLive }) {
   const [planItems, setPlanItems] = useState<{ id: string; title: string; selected: boolean }[]>([])
 
   const timerRef = useRef<NodeJS.Timeout | null>(null)
-  const isInitialMount = useRef(true)
+  const hasPendingSaveRef = useRef(false)
+  const currentWeekStartRef = useRef(review.week_start)
 
-  // Sync when review prop changes externally (e.g. week navigation)
-  useEffect(() => {
-    setWins(review.wins || '')
-    setBlockers(review.blockers || '')
-    setNextPriorities(review.next_priorities || '')
-    isInitialMount.current = true
-  }, [review.week_start, review.wins, review.blockers, review.next_priorities])
+  const latestValuesRef = useRef({
+    weekStart: review.week_start,
+    wins: review.wins || '',
+    blockers: review.blockers || '',
+    nextPriorities: review.next_priorities || '',
+  })
 
-  // Debounced auto-save handler (500ms)
-  const triggerSave = (w: string, b: string, p: string) => {
-    if (timerRef.current) clearTimeout(timerRef.current)
+  // Flush any pending debounced save immediately
+  const flushSave = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
 
-    timerRef.current = setTimeout(() => {
+    if (hasPendingSaveRef.current) {
+      hasPendingSaveRef.current = false
+      const current = latestValuesRef.current
       updateWeekly(
         {
-          weekStart: review.week_start,
-          wins: w,
-          blockers: b,
-          nextPriorities: p,
+          weekStart: current.weekStart,
+          wins: current.wins,
+          blockers: current.blockers,
+          nextPriorities: current.nextPriorities,
         },
         {
           onSuccess: () => {
@@ -49,21 +54,76 @@ export function ReflectionForm({ review }: { review: WeeklyReviewWithLive }) {
           },
         }
       )
+    }
+  }, [updateWeekly])
+
+  // Sync state only when week_start changes (do NOT include review.wins/blockers/next_priorities)
+  useEffect(() => {
+    if (currentWeekStartRef.current !== review.week_start) {
+      flushSave()
+      currentWeekStartRef.current = review.week_start
+      setWins(review.wins || '')
+      setBlockers(review.blockers || '')
+      setNextPriorities(review.next_priorities || '')
+      latestValuesRef.current = {
+        weekStart: review.week_start,
+        wins: review.wins || '',
+        blockers: review.blockers || '',
+        nextPriorities: review.next_priorities || '',
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [review.week_start, flushSave])
+
+  // Keep latestValuesRef up to date with state outside of render
+  useEffect(() => {
+    latestValuesRef.current = {
+      weekStart: currentWeekStartRef.current,
+      wins,
+      blockers,
+      nextPriorities,
+    }
+  }, [wins, blockers, nextPriorities])
+
+  // Flush pending save on unmount
+  useEffect(() => {
+    return () => {
+      flushSave()
+    }
+  }, [flushSave])
+
+  // Debounced auto-save handler (500ms)
+  const triggerSave = (w: string, b: string, p: string) => {
+    hasPendingSaveRef.current = true
+    latestValuesRef.current = {
+      weekStart: currentWeekStartRef.current,
+      wins: w,
+      blockers: b,
+      nextPriorities: p,
+    }
+
+    if (timerRef.current) clearTimeout(timerRef.current)
+
+    timerRef.current = setTimeout(() => {
+      flushSave()
     }, 500)
   }
 
   const handleWinsChange = (val: string) => {
     setWins(val)
+    latestValuesRef.current.wins = val
     triggerSave(val, blockers, nextPriorities)
   }
 
   const handleBlockersChange = (val: string) => {
     setBlockers(val)
+    latestValuesRef.current.blockers = val
     triggerSave(wins, val, nextPriorities)
   }
 
   const handleNextPrioritiesChange = (val: string) => {
     setNextPriorities(val)
+    latestValuesRef.current.nextPriorities = val
     triggerSave(wins, blockers, val)
   }
 
@@ -151,6 +211,7 @@ export function ReflectionForm({ review }: { review: WeeklyReviewWithLive }) {
             id="wins-input"
             value={wins}
             onChange={(e) => handleWinsChange(e.target.value)}
+            onBlur={flushSave}
             placeholder="What went well? Big milestones, good habits, wins..."
             className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none h-24 text-gray-900 dark:text-white placeholder:text-gray-400"
           />
@@ -168,6 +229,7 @@ export function ReflectionForm({ review }: { review: WeeklyReviewWithLive }) {
             id="blockers-input"
             value={blockers}
             onChange={(e) => handleBlockersChange(e.target.value)}
+            onBlur={flushSave}
             placeholder="What held you back? Distractions, unrealistic estimates, unexpected events..."
             className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none h-24 text-gray-900 dark:text-white placeholder:text-gray-400"
           />
@@ -195,6 +257,7 @@ export function ReflectionForm({ review }: { review: WeeklyReviewWithLive }) {
             id="priorities-input"
             value={nextPriorities}
             onChange={(e) => handleNextPrioritiesChange(e.target.value)}
+            onBlur={flushSave}
             placeholder="List your top priorities for next week (one per line)..."
             className="w-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl text-sm p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none h-24 text-gray-900 dark:text-white placeholder:text-gray-400"
           />

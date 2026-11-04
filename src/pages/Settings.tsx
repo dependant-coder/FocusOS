@@ -18,7 +18,7 @@ import {
   Check,
   FileSpreadsheet,
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 import PageShell from '../components/layout/PageShell'
 import Toggle from '../components/ui/Toggle'
 import { useAuth } from '../hooks/useAuth'
@@ -186,11 +186,31 @@ export default function Settings() {
   const handleReduceMotionToggle = (checked: boolean) => {
     setReduceMotion(checked)
     localStorage.setItem('focusos_reduce_motion', String(checked))
+    window.dispatchEvent(new Event('focusos-reduce-motion-change'))
   }
 
   const handleDailyQuoteToggle = (checked: boolean) => {
     setShowDailyQuote(checked)
     localStorage.setItem('focusos_show_quote', String(checked))
+  }
+
+  // Password reset via Supabase auth
+  const [resettingPassword, setResettingPassword] = useState(false)
+  const handleResetPassword = async () => {
+    if (!user?.email) return
+    setResettingPassword(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+        redirectTo: `${window.location.origin}/auth/reset`,
+      })
+      if (error) throw error
+      toast.success('Check your email for a reset link')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to send password reset'
+      toast.error(msg)
+    } finally {
+      setResettingPassword(false)
+    }
   }
 
   // Push notification handlers
@@ -419,9 +439,11 @@ export default function Settings() {
           <div className={dividerClass} />
 
           {/* Change Password row */}
-          <Link
-            to="/reset-password"
-            className={`${rowClass} hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors`}
+          <button
+            type="button"
+            onClick={handleResetPassword}
+            disabled={resettingPassword}
+            className={`${rowClass} w-full text-left hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors disabled:opacity-50`}
           >
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center text-purple-600 dark:text-purple-400">
@@ -429,11 +451,13 @@ export default function Settings() {
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-900 dark:text-white">Change Password</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Update your account credentials</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {resettingPassword ? 'Sending reset link...' : 'Send password reset link to your email'}
+                </p>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400" />
-          </Link>
+          </button>
         </motion.div>
 
         {/* Appearance Section */}
@@ -710,7 +734,7 @@ export default function Settings() {
               <FileSpreadsheet size={14} className="text-indigo-500" />
               <span>Export Spreadsheets (CSV)</span>
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 type="button"
                 onClick={() => exportCsv.mutate('tasks')}
@@ -734,6 +758,14 @@ export default function Settings() {
                 className="py-1.5 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors text-center"
               >
                 Todos.csv
+              </button>
+              <button
+                type="button"
+                onClick={() => exportCsv.mutate('weekly_reviews')}
+                disabled={exportCsv.isPending}
+                className="py-1.5 px-2.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium text-gray-700 dark:text-gray-300 transition-colors text-center"
+              >
+                Reviews.csv
               </button>
             </div>
           </div>

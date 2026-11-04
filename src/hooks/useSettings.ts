@@ -57,26 +57,76 @@ export function useUpdateProfile() {
   })
 }
 
+export const PAGE_SIZE = 1000
+
+export type ExportableTable = 'tasks' | 'habits' | 'habit_logs' | 'daily_todos' | 'weekly_reviews'
+
+/**
+ * Paginate select with .range() in pages of 1000 until fewer rows return.
+ * Checks every query's error and throws.
+ */
+export async function fetchAllUserRows<T = Record<string, unknown>>(
+  table: ExportableTable,
+  uid: string
+): Promise<T[]> {
+  const allRows: T[] = []
+  let from = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from(table)
+      .select('*')
+      .eq('user_id', uid)
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) throw error
+    if (!data || data.length === 0) break
+
+    allRows.push(...(data as T[]))
+    if (data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+
+  return allRows
+}
+
 export function useExportData() {
   const { user } = useAuth()
 
   return useMutation({
     mutationFn: async () => {
-      const uid = user!.id
+      if (!user) throw new Error('Not logged in')
+      const uid = user.id
 
-      const [tasksRes, habitsRes, habitLogsRes, dailyTodosRes] = await Promise.all([
-        supabase.from('tasks').select('*').eq('user_id', uid),
-        supabase.from('habits').select('*').eq('user_id', uid),
-        supabase.from('habit_logs').select('*').eq('user_id', uid),
-        supabase.from('daily_todos').select('*').eq('user_id', uid),
+      // Fetch profile and check error
+      const { data: profileData, error: profileErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .single()
+
+      if (profileErr) throw profileErr
+
+      // Exclude push_subscription
+      const { push_subscription: _ps, ...profileWithoutPush } = profileData || {}
+
+      // Fetch all tables with pagination
+      const [tasks, habits, habitLogs, dailyTodos, weeklyReviews] = await Promise.all([
+        fetchAllUserRows('tasks', uid),
+        fetchAllUserRows('habits', uid),
+        fetchAllUserRows('habit_logs', uid),
+        fetchAllUserRows('daily_todos', uid),
+        fetchAllUserRows('weekly_reviews', uid),
       ])
 
       const exportData = {
         exportedAt: new Date().toISOString(),
-        tasks: tasksRes.data ?? [],
-        habits: habitsRes.data ?? [],
-        habitLogs: habitLogsRes.data ?? [],
-        dailyTodos: dailyTodosRes.data ?? [],
+        profile: profileWithoutPush,
+        tasks,
+        habits,
+        habitLogs,
+        dailyTodos,
+        weeklyReviews,
       }
 
       const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
@@ -92,8 +142,9 @@ export function useExportData() {
     onSuccess: () => {
       toast.success('Data exported successfully!')
     },
-    onError: () => {
-      toast.error('Failed to export data')
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      toast.error(`Failed to export data: ${msg}`)
     },
   })
 }
@@ -102,11 +153,12 @@ export function useExportCsv() {
   const { user } = useAuth()
 
   return useMutation({
-    mutationFn: async (type: 'tasks' | 'habits' | 'daily_todos') => {
+    mutationFn: async (type: 'tasks' | 'habits' | 'daily_todos' | 'weekly_reviews') => {
       if (!user) throw new Error('Not logged in')
       const uid = user.id
-      const { data, error } = await supabase.from(type).select('*').eq('user_id', uid)
-      if (error) throw error
+
+      // Paginate every select with .range() in pages of 1000
+      const data = await fetchAllUserRows(type, uid)
 
       if (!data || data.length === 0) {
         toast('No records to export', { icon: 'ℹ️' })
@@ -142,8 +194,9 @@ export function useExportCsv() {
     onSuccess: (_, type) => {
       toast.success(`Exported ${type}.csv successfully!`)
     },
-    onError: (err) => {
-      toast.error(`Failed to export CSV: ${err.message}`)
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      toast.error(`Failed to export CSV: ${msg}`)
     },
   })
 }

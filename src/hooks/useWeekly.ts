@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { todayLocal, addDaysLocal, endOfWeekLocal } from '../lib/dates'
 import { isHabitDue } from '../lib/habits'
-import type { WeeklyReview, Habit, HabitLog } from '../types'
+import type { WeeklyReview, Habit } from '../types'
 import toast from 'react-hot-toast'
 
 export interface WeeklyReviewWithLive extends WeeklyReview {
@@ -34,13 +34,15 @@ export function useWeekly(weekStart: string) {
       const weekEnd = endOfWeekLocal(weekStart)
       const today = todayLocal()
 
-      // Fetch daily_todos for the week to compute best day and/or live stats
-      const { data: dailyTodos } = await supabase
+      // Fetch daily_todos for the week to compute best day
+      const { data: dailyTodos, error: dailyTodosErr } = await supabase
         .from('daily_todos')
-        .select('*')
+        .select('date, done, type')
         .eq('user_id', user.id)
         .gte('date', weekStart)
         .lte('date', weekEnd)
+
+      if (dailyTodosErr) throw dailyTodosErr
 
       // Calculate best day of week for completions
       const dayCompletions: Record<string, number> = {}
@@ -57,7 +59,8 @@ export function useWeekly(weekStart: string) {
         }
       })
 
-      if (stored) {
+      // Stored review has valid stats ONLY if completion_rate is NOT NULL
+      if (stored && stored.completion_rate !== null) {
         return {
           ...stored,
           isLive: false,
@@ -65,50 +68,103 @@ export function useWeekly(weekStart: string) {
         }
       }
 
-      // If no stored review exists, compute live stats client-side
-      const taskTodos = dailyTodos?.filter((t) => t.type !== 'habit') ?? []
-      const tasksCompleted = taskTodos.filter((t) => t.done).length
-      const tasksMissed = taskTodos.filter((t) => !t.done && t.date < today).length
-      const carriedCount = taskTodos.filter((t) => t.carry_over || (t.carry_count && t.carry_count > 0)).length
-      const totalTasks = tasksCompleted + tasksMissed
-      const completionRate = totalTasks > 0 ? Math.round((tasksCompleted / totalTasks) * 100) : 0
+      // Compute live stats matching supabase/functions/weekly-review/index.ts definitions
+      // 1. Completed tasks: status 'done' and completed_at within [weekStart 00:00 local, next Monday 00:00 local)
+      const nextWeekStart = addDaysLocal(weekStart, 7)
+      const weekStartUtcIso = new Date(`${weekStart}T00:00:00`).toISOString()
+      const nextWeekStartUtcIso = new Date(`${nextWeekStart}T00:00:00`).toISOString()
 
-      // Compute habits due & done for this week
-      const { data: habits } = await supabase
+      const { count: completedCount, error: completedErr } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .eq('status', 'done')
+        .gte('completed_at', weekStartUtcIso)
+        .lt('completed_at', nextWeekStartUtcIso)
+
+      if (completedErr) throw completedErr
+
+      // 2. Missed tasks: due_date within the week and status != 'done'
+      const { count: missedCount, error: missedErr } = await supabase
+        .from('tasks')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .neq('status', 'done')
+        .gte('due_date', weekStart)
+        .lte('due_date', weekEnd)
+
+      if (missedErr) throw missedErr
+
+      // 3. Carried over daily_todos in the week
+      const { count: carriedCount, error: carriedErr } = await supabase
+        .from('daily_todos')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .gte('date', weekStart)
+        .lte('date', weekEnd)
+        .eq('carry_over', true)
+
+      if (carriedErr) throw carriedErr
+
+      // 4. Habits due = per habit per day in week (from created_at date, capped at today), done = completed habit_logs
+      const { data: habits, error: habitsErr } = await supabase
         .from('habits')
         .select('*')
         .eq('user_id', user.id)
         .eq('active', true)
 
-      const { data: habitLogs } = await supabase
+      if (habitsErr) throw habitsErr
+
+      const { count: habitsDoneCount, error: logsErr } = await supabase
         .from('habit_logs')
-        .select('*')
+        .select('*', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .gte('date', weekStart)
         .lte('date', weekEnd)
         .eq('completed', true)
 
-      let habitsDue = 0
-      let habitsDone = 0
+      if (logsErr) throw logsErr
 
-      // Iterate over days from weekStart to weekEnd (capped at today for past/current week)
+      let habitsDue = 0
       let cur = weekStart
       const endDate = weekEnd < today ? weekEnd : today
-      const completedSet = new Set((habitLogs as HabitLog[] ?? []).map((l) => `${l.habit_id}_${l.date}`))
 
       while (cur <= endDate) {
         for (const h of (habits as Habit[] ?? [])) {
           if (isHabitDue(h, cur)) {
             habitsDue++
-            if (completedSet.has(`${h.id}_${cur}`)) {
-              habitsDone++
-            }
           }
         }
         cur = addDaysLocal(cur, 1)
       }
 
-      const habitRate = habitsDue > 0 ? Math.round((habitsDone / habitsDue) * 100) : 0
+      const tasksCompleted = completedCount ?? 0
+      const tasksMissed = missedCount ?? 0
+      const totalTasks = tasksCompleted + tasksMissed
+      const taskCompletionRate = totalTasks > 0 ? Math.round((tasksCompleted / totalTasks) * 100) : 0
+
+      const habitsDone = habitsDoneCount ?? 0
+      const habitCompletionRate = habitsDue > 0 ? Math.round((habitsDone / habitsDue) * 100) : 0
+
+      if (stored) {
+        // Return merged live stats with stored reflection fields
+        return {
+          ...stored,
+          tasks_completed: tasksCompleted,
+          tasks_missed: tasksMissed,
+          completion_rate: taskCompletionRate,
+          habits_due: habitsDue,
+          habits_done: habitsDone,
+          habit_completion_rate: habitCompletionRate,
+          carried_over_count: carriedCount ?? 0,
+          focus_minutes: stored.focus_minutes ?? 0,
+          wins: stored.wins,
+          blockers: stored.blockers,
+          next_priorities: stored.next_priorities,
+          isLive: true,
+          bestDay,
+        }
+      }
 
       return {
         id: 'live-' + weekStart,
@@ -116,11 +172,11 @@ export function useWeekly(weekStart: string) {
         week_start: weekStart,
         tasks_completed: tasksCompleted,
         tasks_missed: tasksMissed,
-        completion_rate: completionRate,
+        completion_rate: taskCompletionRate,
         habits_due: habitsDue,
         habits_done: habitsDone,
-        habit_completion_rate: habitRate,
-        carried_over_count: carriedCount,
+        habit_completion_rate: habitCompletionRate,
+        carried_over_count: carriedCount ?? 0,
         focus_minutes: 0,
         wins: null,
         blockers: null,

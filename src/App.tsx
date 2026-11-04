@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { MotionConfig } from 'framer-motion'
 import { Crosshair } from 'lucide-react'
@@ -45,6 +45,41 @@ function AuthenticatedApp() {
 
 export default function App() {
   const { user, loading } = useAuth()
+  const [reduceMotionPref, setReduceMotionPref] = useState(() => {
+    return localStorage.getItem('focusos_reduce_motion') === 'true'
+  })
+
+  useEffect(() => {
+    const applyClass = (enabled: boolean) => {
+      if (enabled) {
+        document.documentElement.classList.add('reduce-motion')
+      } else {
+        document.documentElement.classList.remove('reduce-motion')
+      }
+    }
+    applyClass(reduceMotionPref)
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'focusos_reduce_motion') {
+        const val = e.newValue === 'true'
+        setReduceMotionPref(val)
+        applyClass(val)
+      }
+    }
+
+    const handleCustomChange = () => {
+      const val = localStorage.getItem('focusos_reduce_motion') === 'true'
+      setReduceMotionPref(val)
+      applyClass(val)
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('focusos-reduce-motion-change', handleCustomChange)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focusos-reduce-motion-change', handleCustomChange)
+    }
+  }, [reduceMotionPref])
 
   if (loading) {
     return <LoadingScreen />
@@ -52,7 +87,7 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <MotionConfig reducedMotion="user">
+      <MotionConfig reducedMotion={reduceMotionPref ? 'always' : 'user'}>
         <Suspense fallback={<LoadingScreen />}>
           <Routes>
             {/* Public Auth Routes */}
