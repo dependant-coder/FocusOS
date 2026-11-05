@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AlertCircle, RotateCcw } from 'lucide-react'
+import { safeSessionStorage } from '../../lib/safeStorage'
 
 interface Props {
   children: ReactNode
@@ -30,16 +31,25 @@ export class ErrorBoundary extends Component<Props, State> {
       error.message?.includes('Loading chunk')
 
     if (isChunkFailure) {
-      const hasReloaded = sessionStorage.getItem('focusos_chunk_reload')
-      if (!hasReloaded) {
-        sessionStorage.setItem('focusos_chunk_reload', 'true')
+      try {
+        const hasReloaded = safeSessionStorage.getItem('focusos_chunk_reload')
+        if (!hasReloaded) {
+          safeSessionStorage.setItem('focusos_chunk_reload', 'true')
+          window.location.reload()
+        }
+      } catch {
+        // Safe fallback if sessionStorage is inaccessible
         window.location.reload()
       }
     }
   }
 
   private handleReset = () => {
-    sessionStorage.removeItem('focusos_chunk_reload')
+    try {
+      safeSessionStorage.removeItem('focusos_chunk_reload')
+    } catch {
+      // ignore
+    }
     this.setState({ hasError: false, error: null })
     window.location.reload()
   }

@@ -8,7 +8,7 @@ import type { DailyTodo, DailyTodoInsert } from '../types'
 import type { HabitLog } from './useHabits'
 import toast from 'react-hot-toast'
 import { randomUUID } from '../lib/uuid'
-import { MUTATION_KEYS } from '../lib/mutationDefaults'
+import { MUTATION_KEYS, MUTATION_SCOPE } from '../lib/mutationDefaults'
 
 /** Fetch all daily_todos for today, with joined task details */
 export function useDailyTodos() {
@@ -61,11 +61,25 @@ export function useToggleDailyTodo() {
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: MUTATION_KEYS.toggleDailyTodo,
-    mutationFn: async ({ id, done }: { id: string; done: boolean; habitId?: string | null; date?: string | null }) => {
-      const today = todayLocal()
-      const key = ['daily_todos', user?.id, today]
+    scope: MUTATION_SCOPE,
+    mutationFn: async ({
+      id,
+      done,
+      habitId,
+      date,
+      userId,
+    }: {
+      id: string
+      done: boolean
+      habitId?: string | null
+      date?: string | null
+      userId?: string | null
+    }) => {
+      const today = date || todayLocal()
+      const effectiveUserId = userId || user?.id
+      const key = ['daily_todos', effectiveUserId, today]
       const cached = qc.getQueryData<DailyTodo[]>(key)
       const item = cached?.find((t) => t.id === id)
 
@@ -76,20 +90,21 @@ export function useToggleDailyTodo() {
 
       if (error) throw error
 
-      if (item?.habit_id && user) {
+      const targetHabitId = habitId || item?.habit_id
+      if (targetHabitId && effectiveUserId) {
         await supabase.from('habit_logs').upsert(
           {
-            habit_id: item.habit_id,
-            user_id: user.id,
-            date: item.date || today,
+            habit_id: targetHabitId,
+            user_id: effectiveUserId,
+            date: date || item?.date || today,
             completed: done,
           },
           { onConflict: 'habit_id,date' }
         )
       }
     },
-    onMutate: async ({ id, done }) => {
-      const today = todayLocal()
+    onMutate: async ({ id, done, date }) => {
+      const today = date || todayLocal()
       const key = ['daily_todos', user?.id, today]
       await qc.cancelQueries({ queryKey: key })
       const prev = qc.getQueryData<DailyTodo[]>(key)
@@ -137,34 +152,94 @@ export function useToggleDailyTodo() {
       qc.invalidateQueries({ queryKey: ['tasks'] })
     },
   })
+
+  const wrappedMutate = (
+    vars: { id: string; done: boolean; habitId?: string | null; date?: string | null; userId?: string | null },
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) => {
+    const norm = {
+      ...vars,
+      date: vars.date ?? todayLocal(),
+      userId: vars.userId ?? user?.id,
+    }
+    return mutation.mutate(norm, options)
+  }
+
+  const wrappedMutateAsync = (
+    vars: { id: string; done: boolean; habitId?: string | null; date?: string | null; userId?: string | null },
+    options?: Parameters<typeof mutation.mutateAsync>[1]
+  ) => {
+    const norm = {
+      ...vars,
+      date: vars.date ?? todayLocal(),
+      userId: vars.userId ?? user?.id,
+    }
+    return mutation.mutateAsync(norm, options)
+  }
+
+  return {
+    ...mutation,
+    mutate: wrappedMutate,
+    mutateAsync: wrappedMutateAsync,
+  }
 }
+
+export type CreateAdhocTodoVariables =
+  | string
+  | {
+      id?: string
+      title: string
+      date?: string
+      userId?: string
+    }
 
 /** Create an ad-hoc daily todo */
 export function useCreateAdhocTodo() {
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: MUTATION_KEYS.createAdhocTodo,
-    mutationFn: async (title: string) => {
-      const id = randomUUID()
+    scope: MUTATION_SCOPE,
+    mutationFn: async (
+      vars: CreateAdhocTodoVariables
+    ) => {
+      const id = (typeof vars === 'string' ? null : vars.id) || randomUUID()
+      const title = typeof vars === 'string' ? vars : vars.title
+      const date = (typeof vars === 'object' && vars.date) ? vars.date : todayLocal()
+      const userId = (typeof vars === 'object' && vars.userId) ? vars.userId : user?.id
+
+      const effectiveUserId = userId || (await supabase.auth.getUser()).data.user?.id
+      if (!effectiveUserId) throw new Error('Not authenticated')
+
       const insert: DailyTodoInsert = {
         id,
-        user_id: user!.id,
+        user_id: effectiveUserId,
         title,
         type: 'adhoc',
         done: false,
-        date: todayLocal(),
+        date,
       }
 
+      // Idempotent upsert: use .select() without .single()
       const { data, error } = await supabase
         .from('daily_todos')
         .upsert(insert, { ignoreDuplicates: true })
         .select()
-        .single()
 
       if (error) throw error
-      return data
+      if (data && data.length > 0) {
+        return data[0]
+      }
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('daily_todos')
+        .select()
+        .eq('id', id)
+        .maybeSingle()
+
+      if (fetchErr) return insert
+      return existing ?? insert
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
@@ -173,6 +248,42 @@ export function useCreateAdhocTodo() {
       toast.error('Failed to add task')
     },
   })
+
+  const wrappedMutate = (
+    vars: CreateAdhocTodoVariables,
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) => {
+    const norm = typeof vars === 'string'
+      ? { id: randomUUID(), title: vars, date: todayLocal(), userId: user?.id }
+      : {
+          id: vars.id ?? randomUUID(),
+          title: vars.title,
+          date: vars.date ?? todayLocal(),
+          userId: vars.userId ?? user?.id,
+        }
+    return mutation.mutate(norm, options)
+  }
+
+  const wrappedMutateAsync = (
+    vars: CreateAdhocTodoVariables,
+    options?: Parameters<typeof mutation.mutateAsync>[1]
+  ) => {
+    const norm = typeof vars === 'string'
+      ? { id: randomUUID(), title: vars, date: todayLocal(), userId: user?.id }
+      : {
+          id: vars.id ?? randomUUID(),
+          title: vars.title,
+          date: vars.date ?? todayLocal(),
+          userId: vars.userId ?? user?.id,
+        }
+    return mutation.mutateAsync(norm, options)
+  }
+
+  return {
+    ...mutation,
+    mutate: wrappedMutate,
+    mutateAsync: wrappedMutateAsync,
+  }
 }
 
 export interface DeleteDailyTodoOptions {

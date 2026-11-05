@@ -6,7 +6,7 @@ import { todayLocal } from '../lib/dates'
 import toast from 'react-hot-toast'
 import { useAuth } from './useAuth'
 import { randomUUID } from '../lib/uuid'
-import { MUTATION_KEYS } from '../lib/mutationDefaults'
+import { MUTATION_KEYS, MUTATION_SCOPE } from '../lib/mutationDefaults'
 
 // Fetch tasks with server-side pagination (.range())
 // Paginates active tasks (status != 'done') by default.
@@ -82,20 +82,33 @@ export function useTasks(filters?: TaskFilters & { includeDone?: boolean }) {
 // Create a new task (idempotent with client-generated UUID)
 export function useCreateTask() {
   const qc = useQueryClient()
-  return useMutation({
+  const { user } = useAuth()
+
+  const mutation = useMutation({
     mutationKey: MUTATION_KEYS.createTask,
-    mutationFn: async (task: Omit<TaskInsert, 'user_id'>) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+    scope: MUTATION_SCOPE,
+    mutationFn: async (task: Omit<TaskInsert, 'user_id'> & { id?: string; userId?: string }) => {
+      const userId = task.userId || user?.id || (await supabase.auth.getUser()).data.user?.id
+      if (!userId) throw new Error('Not authenticated')
 
       const id = task.id || randomUUID()
+      const { userId: _u, ...taskFields } = task
       const { data, error } = await supabase
         .from('tasks')
-        .upsert({ ...task, id, user_id: user.id }, { ignoreDuplicates: true })
+        .upsert({ ...taskFields, id, user_id: userId }, { ignoreDuplicates: true })
         .select()
-        .single()
+
       if (error) throw error
-      return data
+      if (data && data.length > 0) return data[0]
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('tasks')
+        .select()
+        .eq('id', id)
+        .maybeSingle()
+
+      if (fetchErr) return { ...taskFields, id, user_id: userId }
+      return existing ?? { ...taskFields, id, user_id: userId }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] })
@@ -105,20 +118,53 @@ export function useCreateTask() {
       toast.error(`Failed: ${err.message}`)
     },
   })
+
+  const wrappedMutate = (
+    task: Omit<TaskInsert, 'user_id'> & { id?: string; userId?: string },
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) => {
+    const norm = {
+      ...task,
+      id: task.id ?? randomUUID(),
+      userId: task.userId ?? user?.id,
+    }
+    return mutation.mutate(norm, options)
+  }
+
+  const wrappedMutateAsync = (
+    task: Omit<TaskInsert, 'user_id'> & { id?: string; userId?: string },
+    options?: Parameters<typeof mutation.mutateAsync>[1]
+  ) => {
+    const norm = {
+      ...task,
+      id: task.id ?? randomUUID(),
+      userId: task.userId ?? user?.id,
+    }
+    return mutation.mutateAsync(norm, options)
+  }
+
+  return {
+    ...mutation,
+    mutate: wrappedMutate,
+    mutateAsync: wrappedMutateAsync,
+  }
 }
 
 // Update a task
 export function useUpdateTask() {
   const qc = useQueryClient()
-  return useMutation({
+  const { user } = useAuth()
+
+  const mutation = useMutation({
     mutationKey: MUTATION_KEYS.updateTask,
-    mutationFn: async ({ id, ...updates }: TaskUpdate & { id: string }) => {
+    scope: MUTATION_SCOPE,
+    mutationFn: async ({ id, userId: _u, ...updates }: TaskUpdate & { id: string; userId?: string }) => {
       const { data, error } = await supabase
         .from('tasks')
         .update(updates)
         .eq('id', id)
         .select()
-        .single()
+        .maybeSingle()
       if (error) throw error
       return data
     },
@@ -130,6 +176,34 @@ export function useUpdateTask() {
       toast.error(`Failed: ${err.message}`)
     },
   })
+
+  const wrappedMutate = (
+    task: TaskUpdate & { id: string; userId?: string },
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) => {
+    const norm = {
+      ...task,
+      userId: task.userId ?? user?.id,
+    }
+    return mutation.mutate(norm, options)
+  }
+
+  const wrappedMutateAsync = (
+    task: TaskUpdate & { id: string; userId?: string },
+    options?: Parameters<typeof mutation.mutateAsync>[1]
+  ) => {
+    const norm = {
+      ...task,
+      userId: task.userId ?? user?.id,
+    }
+    return mutation.mutateAsync(norm, options)
+  }
+
+  return {
+    ...mutation,
+    mutate: wrappedMutate,
+    mutateAsync: wrappedMutateAsync,
+  }
 }
 
 // Toggle task completion with optimistic updates & daily_todos sync
@@ -215,20 +289,22 @@ export function useDeleteTask() {
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: MUTATION_KEYS.deleteTask,
-    mutationFn: async (id: string) => {
-      const today = todayLocal()
-      // Deleting a task cascades via SET NULL on daily_todos.task_id;
-      // also delete that task's undone daily_todos (date <= today) so orphan rows don't linger.
-      if (user?.id) {
+    scope: MUTATION_SCOPE,
+    mutationFn: async (vars: string | { id: string; date?: string; userId?: string }) => {
+      const id = typeof vars === 'string' ? vars : vars.id
+      const date = (typeof vars === 'object' && vars.date) ? vars.date : todayLocal()
+      const userId = (typeof vars === 'object' && vars.userId) ? vars.userId : user?.id
+
+      if (userId) {
         const { error: dailyErr } = await supabase
           .from('daily_todos')
           .delete()
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .eq('task_id', id)
           .eq('done', false)
-          .lte('date', today)
+          .lte('date', date)
         if (dailyErr) {
           console.error('[useDeleteTask] Error cleaning orphan daily_todos:', dailyErr)
         }
@@ -245,6 +321,32 @@ export function useDeleteTask() {
       toast.error(`Failed to delete task: ${err.message}`)
     },
   })
+
+  const wrappedMutate = (
+    vars: string | { id: string; date?: string; userId?: string },
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) => {
+    const norm = typeof vars === 'string'
+      ? { id: vars, date: todayLocal(), userId: user?.id }
+      : { id: vars.id, date: vars.date ?? todayLocal(), userId: vars.userId ?? user?.id }
+    return mutation.mutate(norm, options)
+  }
+
+  const wrappedMutateAsync = (
+    vars: string | { id: string; date?: string; userId?: string },
+    options?: Parameters<typeof mutation.mutateAsync>[1]
+  ) => {
+    const norm = typeof vars === 'string'
+      ? { id: vars, date: todayLocal(), userId: user?.id }
+      : { id: vars.id, date: vars.date ?? todayLocal(), userId: vars.userId ?? user?.id }
+    return mutation.mutateAsync(norm, options)
+  }
+
+  return {
+    ...mutation,
+    mutate: wrappedMutate,
+    mutateAsync: wrappedMutateAsync,
+  }
 }
 
 // Pin toggle — optimistic update, DB trigger handles daily_todos sync

@@ -47,6 +47,9 @@ vi.mock('@tanstack/react-query', () => ({
     if (queryKey[0] === 'latest_win') {
       return { data: 'Finished machine learning project' }
     }
+    if (queryKey[0] === 'tasks_lifetime_count') {
+      return { data: mockTasks.length }
+    }
     return { data: null }
   },
 }))

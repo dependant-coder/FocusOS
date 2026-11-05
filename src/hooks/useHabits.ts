@@ -5,7 +5,7 @@ import { todayLocal, addDaysLocal } from '../lib/dates'
 import type { DailyTodo } from '../types'
 import toast from 'react-hot-toast'
 import { randomUUID } from '../lib/uuid'
-import { MUTATION_KEYS } from '../lib/mutationDefaults'
+import { MUTATION_KEYS, MUTATION_SCOPE } from '../lib/mutationDefaults'
 
 export interface Habit {
   id: string
@@ -287,21 +287,27 @@ export function useToggleHabitLog() {
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: MUTATION_KEYS.toggleHabit,
+    scope: MUTATION_SCOPE,
     mutationFn: async ({
       habitId,
       date,
       completed,
+      userId,
     }: {
       habitId: string
       date: string
       completed: boolean
+      userId?: string | null
     }) => {
+      const effectiveUserId = userId || user?.id || (await supabase.auth.getUser()).data.user?.id
+      if (!effectiveUserId) throw new Error('Not authenticated')
+
       const { error } = await supabase.from('habit_logs').upsert(
         {
           habit_id: habitId,
-          user_id: user!.id,
+          user_id: effectiveUserId,
           date,
           completed,
         },
@@ -314,7 +320,7 @@ export function useToggleHabitLog() {
       await supabase
         .from('daily_todos')
         .update({ done: completed })
-        .eq('user_id', user!.id)
+        .eq('user_id', effectiveUserId)
         .eq('habit_id', habitId)
         .eq('date', date)
     },
@@ -359,4 +365,33 @@ export function useToggleHabitLog() {
       qc.invalidateQueries({ queryKey: ['daily_todos'] })
     },
   })
+
+  const wrappedMutate = (
+    vars: { habitId: string; date: string; completed: boolean; userId?: string | null },
+    options?: Parameters<typeof mutation.mutate>[1]
+  ) => {
+    const norm = {
+      ...vars,
+      userId: vars.userId ?? user?.id,
+    }
+    return mutation.mutate(norm, options)
+  }
+
+  const wrappedMutateAsync = (
+    vars: { habitId: string; date: string; completed: boolean; userId?: string | null },
+    options?: Parameters<typeof mutation.mutateAsync>[1]
+  ) => {
+    const norm = {
+      ...vars,
+      userId: vars.userId ?? user?.id,
+    }
+    return mutation.mutateAsync(norm, options)
+  }
+
+  return {
+    ...mutation,
+    mutate: wrappedMutate,
+    mutateAsync: wrappedMutateAsync,
+  }
 }
+

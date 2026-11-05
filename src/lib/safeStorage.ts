@@ -118,4 +118,94 @@ class SafeStorage implements Storage {
 }
 
 export const safeStorage = new SafeStorage()
+
+class SafeSessionStorage implements Storage {
+  private fallback = new MemoryStorage()
+
+  private isSessionStorageAvailable(): boolean {
+    if (typeof window === 'undefined' || !window.sessionStorage) {
+      return false
+    }
+    try {
+      const testKey = '__session_test__'
+      window.sessionStorage.setItem(testKey, testKey)
+      window.sessionStorage.removeItem(testKey)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  get length(): number {
+    try {
+      if (this.isSessionStorageAvailable()) {
+        return window.sessionStorage.length
+      }
+    } catch {
+      // fallback
+    }
+    return this.fallback.length
+  }
+
+  clear(): void {
+    try {
+      if (this.isSessionStorageAvailable()) {
+        window.sessionStorage.clear()
+      }
+    } catch {
+      // fallback
+    }
+    this.fallback.clear()
+  }
+
+  getItem(key: string): string | null {
+    try {
+      if (this.isSessionStorageAvailable()) {
+        const val = window.sessionStorage.getItem(key)
+        if (val !== null) return val
+      }
+    } catch {
+      // fallback
+    }
+    return this.fallback.getItem(key)
+  }
+
+  key(index: number): string | null {
+    try {
+      if (this.isSessionStorageAvailable()) {
+        return window.sessionStorage.key(index)
+      }
+    } catch {
+      // fallback
+    }
+    return this.fallback.key(index)
+  }
+
+  removeItem(key: string): void {
+    try {
+      if (this.isSessionStorageAvailable()) {
+        window.sessionStorage.removeItem(key)
+      }
+    } catch {
+      // fallback
+    }
+    this.fallback.removeItem(key)
+  }
+
+  setItem(key: string, value: string): void {
+    const stringVal = String(value)
+    try {
+      if (this.isSessionStorageAvailable()) {
+        window.sessionStorage.setItem(key, stringVal)
+        return
+      }
+    } catch {
+      // fallback
+    }
+    this.fallback.setItem(key, stringVal)
+  }
+}
+
+export const safeSessionStorage = new SafeSessionStorage()
 export default safeStorage
+

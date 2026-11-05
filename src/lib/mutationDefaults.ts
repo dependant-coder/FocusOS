@@ -13,51 +13,76 @@ export const MUTATION_KEYS = {
   createAdhocTodo: ['daily_todos', 'create_adhoc'] as const,
 }
 
+export const MUTATION_SCOPE = { id: 'user-writes' } as const
+
 export function registerMutationDefaults(queryClient: QueryClient) {
-  // 1. Create task
+  // 1. Create task (idempotent create)
   queryClient.setMutationDefaults(MUTATION_KEYS.createTask, {
-    mutationFn: async (task: Omit<TaskInsert, 'user_id'>) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+    scope: MUTATION_SCOPE,
+    mutationFn: async (task: Omit<TaskInsert, 'user_id'> & { id?: string; userId?: string }) => {
+      const userId = task.userId || (await supabase.auth.getUser()).data.user?.id
+      if (!userId) throw new Error('Not authenticated')
 
       const id = task.id || randomUUID()
+      const { userId: _u, ...taskFields } = task
+
+      // Idempotent upsert: use .select() without .single() so replaying an ignored row doesn't fail
       const { data, error } = await supabase
         .from('tasks')
-        .upsert({ ...task, id, user_id: user.id }, { ignoreDuplicates: true })
+        .upsert({ ...taskFields, id, user_id: userId }, { ignoreDuplicates: true })
         .select()
-        .single()
+
       if (error) throw error
-      return data
+      if (data && data.length > 0) {
+        return data[0]
+      }
+
+      // If already applied previously, fetch existing row by id or return input
+      const { data: existing, error: fetchErr } = await supabase
+        .from('tasks')
+        .select()
+        .eq('id', id)
+        .maybeSingle()
+
+      if (fetchErr) {
+        return { ...taskFields, id, user_id: userId }
+      }
+      return existing ?? { ...taskFields, id, user_id: userId }
     },
   })
 
   // 2. Update task
   queryClient.setMutationDefaults(MUTATION_KEYS.updateTask, {
-    mutationFn: async ({ id, ...updates }: TaskUpdate & { id: string }) => {
+    scope: MUTATION_SCOPE,
+    mutationFn: async ({ id, userId: _u, ...updates }: TaskUpdate & { id: string; userId?: string }) => {
       const { data, error } = await supabase
         .from('tasks')
         .update(updates)
         .eq('id', id)
         .select()
-        .single()
+        .maybeSingle()
       if (error) throw error
       return data
     },
   })
 
-  // 3. Delete task
+  // 3. Delete task (captures date and userId at call time)
   queryClient.setMutationDefaults(MUTATION_KEYS.deleteTask, {
-    mutationFn: async (id: string) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        const today = todayLocal()
+    scope: MUTATION_SCOPE,
+    mutationFn: async (vars: string | { id: string; date?: string; userId?: string }) => {
+      const id = typeof vars === 'string' ? vars : vars.id
+      const date = (typeof vars === 'object' && vars.date) ? vars.date : todayLocal()
+      const userId = (typeof vars === 'object' && vars.userId) ? vars.userId : null
+
+      const effectiveUserId = userId || (await supabase.auth.getUser()).data.user?.id
+      if (effectiveUserId) {
         await supabase
           .from('daily_todos')
           .delete()
-          .eq('user_id', user.id)
+          .eq('user_id', effectiveUserId)
           .eq('task_id', id)
           .eq('done', false)
-          .lte('date', today)
+          .lte('date', date)
       }
 
       const { error } = await supabase.from('tasks').delete().eq('id', id)
@@ -67,16 +92,19 @@ export function registerMutationDefaults(queryClient: QueryClient) {
 
   // 4. Toggle daily todo
   queryClient.setMutationDefaults(MUTATION_KEYS.toggleDailyTodo, {
+    scope: MUTATION_SCOPE,
     mutationFn: async ({
       id,
       done,
       habitId,
       date,
+      userId,
     }: {
       id: string
       done: boolean
       habitId?: string | null
       date?: string | null
+      userId?: string | null
     }) => {
       const { error } = await supabase
         .from('daily_todos')
@@ -86,14 +114,14 @@ export function registerMutationDefaults(queryClient: QueryClient) {
       if (error) throw error
 
       if (habitId) {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const today = todayLocal()
+        const effectiveUserId = userId || (await supabase.auth.getUser()).data.user?.id
+        if (effectiveUserId) {
+          const entryDate = date || todayLocal()
           await supabase.from('habit_logs').upsert(
             {
               habit_id: habitId,
-              user_id: user.id,
-              date: date || today,
+              user_id: effectiveUserId,
+              date: entryDate,
               completed: done,
             },
             { onConflict: 'habit_id,date' }
@@ -105,22 +133,25 @@ export function registerMutationDefaults(queryClient: QueryClient) {
 
   // 5. Toggle habit
   queryClient.setMutationDefaults(MUTATION_KEYS.toggleHabit, {
+    scope: MUTATION_SCOPE,
     mutationFn: async ({
       habitId,
       date,
       completed,
+      userId,
     }: {
       habitId: string
       date: string
       completed: boolean
+      userId?: string | null
     }) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
+      const effectiveUserId = userId || (await supabase.auth.getUser()).data.user?.id
+      if (!effectiveUserId) throw new Error('Not authenticated')
 
       const { error } = await supabase.from('habit_logs').upsert(
         {
           habit_id: habitId,
-          user_id: user.id,
+          user_id: effectiveUserId,
           date,
           completed,
         },
@@ -132,37 +163,56 @@ export function registerMutationDefaults(queryClient: QueryClient) {
       await supabase
         .from('daily_todos')
         .update({ done: completed })
-        .eq('user_id', user.id)
+        .eq('user_id', effectiveUserId)
         .eq('habit_id', habitId)
         .eq('date', date)
     },
   })
 
-  // 6. Create ad-hoc todo
+  // 6. Create ad-hoc todo (idempotent create, captures date and userId at call time)
   queryClient.setMutationDefaults(MUTATION_KEYS.createAdhocTodo, {
-    mutationFn: async (vars: string | { id?: string; title: string }) => {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
+    scope: MUTATION_SCOPE,
+    mutationFn: async (
+      vars: string | { id?: string; title: string; date?: string; userId?: string }
+    ) => {
       const id = (typeof vars === 'string' ? null : vars.id) || randomUUID()
       const title = typeof vars === 'string' ? vars : vars.title
+      const date = (typeof vars === 'object' && vars.date) ? vars.date : todayLocal()
+      const userId = (typeof vars === 'object' && vars.userId) ? vars.userId : null
+
+      const effectiveUserId = userId || (await supabase.auth.getUser()).data.user?.id
+      if (!effectiveUserId) throw new Error('Not authenticated')
+
       const insert: DailyTodoInsert = {
         id,
-        user_id: user.id,
+        user_id: effectiveUserId,
         title,
         type: 'adhoc',
         done: false,
-        date: todayLocal(),
+        date,
       }
 
+      // Idempotent upsert: use .select() without .single()
       const { data, error } = await supabase
         .from('daily_todos')
         .upsert(insert, { ignoreDuplicates: true })
         .select()
-        .single()
 
       if (error) throw error
-      return data
+      if (data && data.length > 0) {
+        return data[0]
+      }
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('daily_todos')
+        .select()
+        .eq('id', id)
+        .maybeSingle()
+
+      if (fetchErr) {
+        return insert
+      }
+      return existing ?? insert
     },
   })
 }

@@ -34,8 +34,21 @@ export default function Home() {
   const { data: todos = [] } = useDailyTodos()
   const toggleTodo = useToggleDailyTodo()
 
-  const { data: allTasks = [] } = useTasks()
+  // Cheap head count query for lifetime task count (all statuses) so onboarding stays hidden
+  const { data: lifetimeTaskCount = 0 } = useQuery({
+    queryKey: ['tasks_lifetime_count', user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('tasks')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user!.id)
+      if (error) throw error
+      return count ?? 0
+    },
+  })
   const { data: overdueTasks = [] } = useTasks({ overdue: true })
+  const { data: allTasks = [] } = useTasks()
 
   const { data: habits = [] } = useHabits()
   const { data: habitLogs = [] } = useHabitLogs(1)
@@ -140,7 +153,9 @@ export default function Home() {
   }
 
   // New user onboarding checklist (shown only until user has completed the 3 setup steps)
-  const hasTask = allTasks.length > 0
+  const hasTask = (lifetimeTaskCount !== undefined && lifetimeTaskCount !== null)
+    ? lifetimeTaskCount > 0
+    : allTasks.length > 0
   const hasHabit = habits.length > 0
   const hasDailyPlan = todos.length > 0
   const showOnboarding = !(hasTask && hasHabit && hasDailyPlan)
