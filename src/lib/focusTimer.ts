@@ -43,6 +43,33 @@ export function calculateActualSeconds(state: TimerState, endMs = Date.now()): n
 }
 
 /**
+ * Computes the planned absolute end timestamp in milliseconds.
+ * plannedEndMs = startedAtMs + pausedTotalMs + plannedMs
+ */
+export function plannedEndMs(state: {
+  startedAtMs: number
+  pausedTotalMs: number
+  plannedMs: number
+}): number {
+  return state.startedAtMs + state.pausedTotalMs + state.plannedMs
+}
+
+/**
+ * Computes the capped completion end timestamp in milliseconds.
+ * completionEndMs = Math.min(nowMs, plannedEndMs(state))
+ */
+export function completionEndMs(
+  state: {
+    startedAtMs: number
+    pausedTotalMs: number
+    plannedMs: number
+  },
+  nowMs = Date.now()
+): number {
+  return Math.min(nowMs, plannedEndMs(state))
+}
+
+/**
  * Reconstructs remaining seconds from a database row (e.g. for cross-device view).
  * Formula matches 0012_focus_sessions.sql:
  *   remaining = planned_seconds - (now - started_at) + paused_seconds + (now - paused_at, only while paused)

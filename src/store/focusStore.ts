@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import toast from 'react-hot-toast'
 import { safeStorage } from '../lib/safeStorage'
 import { randomUUID } from '../lib/uuid'
 import {
   calculateRemainingMs,
   calculateActualSeconds,
+  completionEndMs,
   pauseTimer,
   resumeTimer,
   extendTimer,
@@ -14,7 +16,24 @@ import {
 import { supabase } from '../lib/supabase'
 import type { FocusSession, FocusKind, FocusStatus } from '../types'
 
+export interface FocusRowSnapshot {
+  id: string
+  user_id: string
+  task_id: string | null
+  kind: FocusKind
+  planned_seconds: number
+  actual_seconds: number | null
+  started_at: string
+  ended_at: string | null
+  paused_at: string | null
+  paused_seconds: number
+  status: FocusStatus
+  interruptions: number
+  note: string | null
+}
+
 export interface PersistedFocusState {
+  userId: string | null
   sessionId: string | null
   taskId: string | null
   taskTitle: string | null
@@ -38,6 +57,7 @@ export interface PersistedFocusState {
     plannedSeconds: number
     status: 'completed' | 'stopped'
   } | null
+  pendingRows: FocusRowSnapshot[]
 }
 
 interface FocusStoreActions {
@@ -57,16 +77,45 @@ interface FocusStoreActions {
   incrementInterruptions: (userId?: string) => void
   closeCompletedSheet: () => void
   clearConflict: () => void
-  adoptRemoteSession: (session: FocusSession) => void
+  adoptRemoteSession: (session: FocusSession, taskTitle?: string | null) => Promise<void>
   endRemoteAndStart: (remoteSessionId: string, startParams: Parameters<FocusStoreActions['startSession']>[0]) => Promise<void>
   getRemainingMs: (nowMs?: number) => number
   getFormattedRemaining: (nowMs?: number) => string
   checkSessionFinishedWhileClosed: () => boolean
+  syncPending: () => Promise<void>
+}
+
+// Outbox sync helpers
+let syncInProgress = false
+let backoffTimer: ReturnType<typeof setTimeout> | null = null
+let backoffDelay = 1000
+
+function scheduleRetry() {
+  if (backoffTimer) clearTimeout(backoffTimer)
+  backoffTimer = setTimeout(() => {
+    backoffTimer = null
+    useFocusStore.getState().syncPending()
+  }, backoffDelay)
+  backoffDelay = Math.min(backoffDelay * 2, 30000)
+}
+
+function updatePendingRow(snapshot: FocusRowSnapshot) {
+  const current = useFocusStore.getState().pendingRows || []
+  const idx = current.findIndex((r) => r.id === snapshot.id)
+  let updated: FocusRowSnapshot[]
+  if (idx >= 0) {
+    updated = [...current]
+    updated[idx] = snapshot
+  } else {
+    updated = [...current, snapshot]
+  }
+  useFocusStore.setState({ pendingRows: updated })
 }
 
 export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
   persist(
     (set, get) => ({
+      userId: null,
       sessionId: null,
       taskId: null,
       taskTitle: null,
@@ -82,6 +131,7 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
       conflictSession: null,
       completedSheetOpen: false,
       completedSummary: null,
+      pendingRows: [],
 
       getRemainingMs: (nowMs = Date.now()) => {
         const state = get()
@@ -108,12 +158,72 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
         if (state.sessionId && state.status === 'running') {
           const remaining = get().getRemainingMs()
           if (remaining <= 0) {
-            // It finished while app was closed!
+            // It finished while app was closed! completeSession will cap to planned time
             get().completeSession()
             return true
           }
         }
         return false
+      },
+
+      syncPending: async () => {
+        if (syncInProgress) return
+        const currentPending = get().pendingRows
+        if (!currentPending || currentPending.length === 0) return
+
+        syncInProgress = true
+        try {
+          const toProcess = [...get().pendingRows]
+          const succeededIds = new Set<string>()
+          let hadError = false
+
+          for (const snapshot of toProcess) {
+            const { error } = await supabase
+              .from('focus_sessions')
+              .upsert(snapshot, { onConflict: 'id' })
+
+            if (!error) {
+              succeededIds.add(snapshot.id)
+            } else {
+              hadError = true
+              const is23505 =
+                error.code === '23505' ||
+                error.message?.includes('23505') ||
+                error.message?.includes('focus_sessions_one_active_per_user')
+
+              // Only treat 23505 as active conflict for running/paused sessions
+              if (is23505 && (snapshot.status === 'running' || snapshot.status === 'paused')) {
+                const { data: conflict } = await supabase
+                  .from('focus_sessions')
+                  .select('*')
+                  .eq('user_id', snapshot.user_id)
+                  .in('status', ['running', 'paused'])
+                  .maybeSingle()
+
+                succeededIds.add(snapshot.id)
+                set({
+                  conflictSession: conflict,
+                  status: 'stopped',
+                  sessionId: null,
+                })
+              }
+            }
+          }
+
+          if (succeededIds.size > 0) {
+            set((prev) => ({
+              pendingRows: prev.pendingRows.filter((r) => !succeededIds.has(r.id)),
+            }))
+          }
+
+          if (hadError) {
+            scheduleRetry()
+          } else {
+            backoffDelay = 1000
+          }
+        } finally {
+          syncInProgress = false
+        }
       },
 
       startSession: async ({
@@ -127,6 +237,17 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
         const id = randomUUID()
         const nowMs = Date.now()
         const plannedMs = plannedSeconds * 1000
+
+        let effectiveUserId = userId || get().userId
+        if (!effectiveUserId) {
+          const authUser = (await supabase.auth.getUser()).data.user
+          if (authUser?.id) {
+            effectiveUserId = authUser.id
+          }
+        }
+        if (effectiveUserId) {
+          set({ userId: effectiveUserId })
+        }
 
         set({
           sessionId: id,
@@ -146,55 +267,36 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           completedSummary: null,
         })
 
-        // Best effort / local-first DB sync
-        try {
-          const effectiveUserId = userId || (await supabase.auth.getUser()).data.user?.id
-          if (effectiveUserId) {
-            const { error } = await supabase.from('focus_sessions').insert({
-              id,
-              user_id: effectiveUserId,
-              task_id: taskId,
-              kind,
-              planned_seconds: plannedSeconds,
-              started_at: new Date(nowMs).toISOString(),
-              status: 'running',
-              paused_seconds: 0,
-              interruptions: 0,
-            })
+        const snapshot: FocusRowSnapshot = {
+          id,
+          user_id: effectiveUserId || '',
+          task_id: taskId,
+          kind,
+          planned_seconds: plannedSeconds,
+          actual_seconds: null,
+          started_at: new Date(nowMs).toISOString(),
+          ended_at: null,
+          paused_at: null,
+          paused_seconds: 0,
+          status: 'running',
+          interruptions: 0,
+          note: null,
+        }
 
-            if (error) {
-              // Check 23505 unique conflict (already running session on another device)
-              if (
-                error.code === '23505' ||
-                error.message?.includes('23505') ||
-                error.message?.includes('focus_sessions_one_active_per_user')
-              ) {
-                const { data: conflict } = await supabase
-                  .from('focus_sessions')
-                  .select('*')
-                  .eq('user_id', effectiveUserId)
-                  .in('status', ['running', 'paused'])
-                  .maybeSingle()
+        updatePendingRow(snapshot)
+        await get().syncPending()
 
-                set({
-                  conflictSession: conflict,
-                  status: 'stopped',
-                  sessionId: null,
-                })
-                return { success: false, conflict }
-              }
-            }
-          }
-        } catch (err) {
-          console.warn('[FocusStore] Non-fatal offline start session error:', err)
+        const afterState = get()
+        if (afterState.conflictSession) {
+          return { success: false, conflict: afterState.conflictSession }
         }
 
         return { success: true }
       },
 
-      pauseSession: async (_userId) => {
+      pauseSession: async (userId) => {
         const state = get()
-        if (state.status !== 'running') return
+        if (state.status !== 'running' || !state.sessionId) return
 
         const nowMs = Date.now()
         const timerState: TimerState = {
@@ -212,26 +314,37 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           pausedAtMs: updated.pausedAtMs,
         })
 
-        if (state.sessionId) {
-          try {
-            await supabase
-              .from('focus_sessions')
-              .update({
-                status: 'paused',
-                paused_at: new Date(nowMs).toISOString(),
-                paused_seconds: Math.floor(updated.pausedTotalMs / 1000),
-                actual_seconds: actualSeconds,
-              })
-              .eq('id', state.sessionId)
-          } catch {
-            // best-effort offline
-          }
+        const effectiveUserId =
+          userId ||
+          state.userId ||
+          state.pendingRows.find((r) => r.id === state.sessionId)?.user_id ||
+          ''
+
+        const existingSnapshot = state.pendingRows.find((r) => r.id === state.sessionId)
+
+        const snapshot: FocusRowSnapshot = {
+          id: state.sessionId,
+          user_id: effectiveUserId,
+          task_id: state.taskId,
+          kind: state.kind,
+          planned_seconds: Math.floor(state.plannedMs / 1000),
+          actual_seconds: actualSeconds,
+          started_at: existingSnapshot?.started_at || new Date(state.startedAtMs).toISOString(),
+          ended_at: null,
+          paused_at: new Date(nowMs).toISOString(),
+          paused_seconds: Math.floor(updated.pausedTotalMs / 1000),
+          status: 'paused',
+          interruptions: state.interruptions,
+          note: state.note,
         }
+
+        updatePendingRow(snapshot)
+        get().syncPending()
       },
 
-      resumeSession: async (_userId) => {
+      resumeSession: async (userId) => {
         const state = get()
-        if (state.status !== 'paused') return
+        if (state.status !== 'paused' || !state.sessionId) return
 
         const nowMs = Date.now()
         const timerState: TimerState = {
@@ -250,24 +363,35 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           pausedAtMs: null,
         })
 
-        if (state.sessionId) {
-          try {
-            await supabase
-              .from('focus_sessions')
-              .update({
-                status: 'running',
-                paused_at: null,
-                paused_seconds: Math.floor(updated.pausedTotalMs / 1000),
-                actual_seconds: actualSeconds,
-              })
-              .eq('id', state.sessionId)
-          } catch {
-            // best-effort offline
-          }
+        const effectiveUserId =
+          userId ||
+          state.userId ||
+          state.pendingRows.find((r) => r.id === state.sessionId)?.user_id ||
+          ''
+
+        const existingSnapshot = state.pendingRows.find((r) => r.id === state.sessionId)
+
+        const snapshot: FocusRowSnapshot = {
+          id: state.sessionId,
+          user_id: effectiveUserId,
+          task_id: state.taskId,
+          kind: state.kind,
+          planned_seconds: Math.floor(state.plannedMs / 1000),
+          actual_seconds: actualSeconds,
+          started_at: existingSnapshot?.started_at || new Date(state.startedAtMs).toISOString(),
+          ended_at: null,
+          paused_at: null,
+          paused_seconds: Math.floor(updated.pausedTotalMs / 1000),
+          status: 'running',
+          interruptions: state.interruptions,
+          note: state.note,
         }
+
+        updatePendingRow(snapshot)
+        get().syncPending()
       },
 
-      extendSession: async (seconds: number, _userId) => {
+      extendSession: async (seconds: number, userId) => {
         const state = get()
         if (!state.sessionId) return
 
@@ -285,19 +409,36 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           plannedMs: updated.plannedMs,
         })
 
-        try {
-          await supabase
-            .from('focus_sessions')
-            .update({
-              planned_seconds: Math.floor(updated.plannedMs / 1000),
-            })
-            .eq('id', state.sessionId)
-        } catch {
-          // best-effort offline
+        const effectiveUserId =
+          userId ||
+          state.userId ||
+          state.pendingRows.find((r) => r.id === state.sessionId)?.user_id ||
+          ''
+
+        const existingSnapshot = state.pendingRows.find((r) => r.id === state.sessionId)
+        const currentActual = calculateActualSeconds(updated, Date.now())
+
+        const snapshot: FocusRowSnapshot = {
+          id: state.sessionId,
+          user_id: effectiveUserId,
+          task_id: state.taskId,
+          kind: state.kind,
+          planned_seconds: Math.floor(updated.plannedMs / 1000),
+          actual_seconds: existingSnapshot?.actual_seconds ?? currentActual,
+          started_at: existingSnapshot?.started_at || new Date(state.startedAtMs).toISOString(),
+          ended_at: existingSnapshot?.ended_at || null,
+          paused_at: state.pausedAtMs ? new Date(state.pausedAtMs).toISOString() : null,
+          paused_seconds: Math.floor(state.pausedTotalMs / 1000),
+          status: state.status,
+          interruptions: state.interruptions,
+          note: state.note,
         }
+
+        updatePendingRow(snapshot)
+        get().syncPending()
       },
 
-      stopSession: async (_userId) => {
+      stopSession: async (userId) => {
         const state = get()
         if (!state.sessionId) return
 
@@ -327,24 +468,35 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           },
         })
 
-        try {
-          await supabase
-            .from('focus_sessions')
-            .update({
-              status: 'stopped',
-              ended_at: new Date(nowMs).toISOString(),
-              actual_seconds: actualSeconds,
-              paused_at: null,
-              paused_seconds: Math.floor(state.pausedTotalMs / 1000),
-              interruptions: state.interruptions,
-            })
-            .eq('id', sessionId)
-        } catch {
-          // best-effort offline
+        const effectiveUserId =
+          userId ||
+          state.userId ||
+          state.pendingRows.find((r) => r.id === sessionId)?.user_id ||
+          ''
+
+        const existingSnapshot = state.pendingRows.find((r) => r.id === sessionId)
+
+        const snapshot: FocusRowSnapshot = {
+          id: sessionId,
+          user_id: effectiveUserId,
+          task_id: state.taskId,
+          kind: state.kind,
+          planned_seconds: plannedSeconds,
+          actual_seconds: actualSeconds,
+          started_at: existingSnapshot?.started_at || new Date(state.startedAtMs).toISOString(),
+          ended_at: new Date(nowMs).toISOString(),
+          paused_at: null,
+          paused_seconds: Math.floor(state.pausedTotalMs / 1000),
+          status: 'stopped',
+          interruptions: state.interruptions,
+          note: state.note,
         }
+
+        updatePendingRow(snapshot)
+        get().syncPending()
       },
 
-      completeSession: async (_userId) => {
+      completeSession: async (userId) => {
         const state = get()
         if (!state.sessionId) return
 
@@ -356,7 +508,14 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           pausedAtMs: state.pausedAtMs,
           status: state.status,
         }
-        const actualSeconds = calculateActualSeconds(timerState, nowMs)
+
+        // Completion Cap: ended_at = completionEndMs and actual_seconds = floor((completionEndMs - startedAtMs - pausedTotalMs)/1000)
+        const compEnd = completionEndMs(timerState, nowMs)
+        const endedAt = new Date(compEnd).toISOString()
+        const actualSeconds = Math.max(
+          0,
+          Math.floor((compEnd - state.startedAtMs - state.pausedTotalMs) / 1000)
+        )
         const sessionId = state.sessionId
         const plannedSeconds = Math.floor(state.plannedMs / 1000)
 
@@ -374,33 +533,74 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           },
         })
 
-        try {
-          await supabase
-            .from('focus_sessions')
-            .update({
-              status: 'completed',
-              ended_at: new Date(nowMs).toISOString(),
-              actual_seconds: actualSeconds,
-              paused_at: null,
-              paused_seconds: Math.floor(state.pausedTotalMs / 1000),
-              interruptions: state.interruptions,
-            })
-            .eq('id', sessionId)
-        } catch {
-          // best-effort offline
+        const effectiveUserId =
+          userId ||
+          state.userId ||
+          state.pendingRows.find((r) => r.id === sessionId)?.user_id ||
+          ''
+
+        const existingSnapshot = state.pendingRows.find((r) => r.id === sessionId)
+
+        const snapshot: FocusRowSnapshot = {
+          id: sessionId,
+          user_id: effectiveUserId,
+          task_id: state.taskId,
+          kind: state.kind,
+          planned_seconds: plannedSeconds,
+          actual_seconds: actualSeconds,
+          started_at: existingSnapshot?.started_at || new Date(state.startedAtMs).toISOString(),
+          ended_at: endedAt,
+          paused_at: null,
+          paused_seconds: Math.floor(state.pausedTotalMs / 1000),
+          status: 'completed',
+          interruptions: state.interruptions,
+          note: state.note,
         }
+
+        updatePendingRow(snapshot)
+        get().syncPending()
       },
 
       incrementInterruptions: (userId) => {
         const state = get()
         const next = state.interruptions + 1
         set({ interruptions: next })
-        if (state.sessionId && userId) {
-          supabase
-            .from('focus_sessions')
-            .update({ interruptions: next })
-            .eq('id', state.sessionId)
-            .then(() => {})
+
+        if (state.sessionId) {
+          const effectiveUserId =
+            userId ||
+            state.userId ||
+            state.pendingRows.find((r) => r.id === state.sessionId)?.user_id ||
+            ''
+
+          const existingSnapshot = state.pendingRows.find((r) => r.id === state.sessionId)
+          const timerState: TimerState = {
+            startedAtMs: state.startedAtMs,
+            plannedMs: state.plannedMs,
+            pausedTotalMs: state.pausedTotalMs,
+            pausedAtMs: state.pausedAtMs,
+            status: state.status,
+          }
+          const actualSeconds = calculateActualSeconds(timerState, Date.now())
+
+          const snapshot: FocusRowSnapshot = {
+            id: state.sessionId,
+            user_id: effectiveUserId,
+            task_id: state.taskId,
+            kind: state.kind,
+            planned_seconds: Math.floor(state.plannedMs / 1000),
+            actual_seconds: existingSnapshot?.actual_seconds ?? actualSeconds,
+            started_at: existingSnapshot?.started_at || new Date(state.startedAtMs).toISOString(),
+            ended_at: existingSnapshot?.ended_at || null,
+            paused_at: state.pausedAtMs ? new Date(state.pausedAtMs).toISOString() : null,
+            paused_seconds: Math.floor(state.pausedTotalMs / 1000),
+            status: state.status,
+            interruptions: next,
+            note: state.note,
+          }
+
+          updatePendingRow(snapshot)
+          get().syncPending()
         }
       },
 
@@ -417,13 +617,18 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
         set({ conflictSession: null })
       },
 
-      adoptRemoteSession: (session: FocusSession) => {
+      adoptRemoteSession: async (session: FocusSession, taskTitle?: string | null) => {
         const startedAtMs = new Date(session.started_at).getTime()
         const pausedAtMs = session.paused_at ? new Date(session.paused_at).getTime() : null
+        const title =
+          taskTitle ||
+          ('tasks' in session && (session as { tasks?: { title?: string } }).tasks?.title) ||
+          null
+
         set({
           sessionId: session.id,
           taskId: session.task_id,
-          taskTitle: null, // will be resolved if task_id exists
+          taskTitle: title,
           kind: session.kind as FocusKind,
           startedAtMs,
           plannedMs: session.planned_seconds * 1000,
@@ -434,22 +639,36 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           note: session.note,
           conflictSession: null,
         })
+
+        if (!title && session.task_id) {
+          const { data: t } = await supabase
+            .from('tasks')
+            .select('title')
+            .eq('id', session.task_id)
+            .maybeSingle()
+
+          if (t?.title) {
+            set({ taskTitle: t.title })
+          }
+        }
       },
 
       endRemoteAndStart: async (remoteSessionId, startParams) => {
-        try {
-          const now = new Date().toISOString()
-          await supabase
-            .from('focus_sessions')
-            .update({
-              status: 'stopped',
-              ended_at: now,
-              paused_at: null,
-            })
-            .eq('id', remoteSessionId)
-        } catch {
-          // ignore
+        const now = new Date().toISOString()
+        const { error } = await supabase
+          .from('focus_sessions')
+          .update({
+            status: 'stopped',
+            ended_at: now,
+            paused_at: null,
+          })
+          .eq('id', remoteSessionId)
+
+        if (error) {
+          toast.error('Failed to end remote session')
+          return
         }
+
         await get().startSession(startParams)
       },
     }),
@@ -457,6 +676,7 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
       name: 'focusos_active_focus_session',
       storage: createJSONStorage(() => safeStorage),
       partialize: (state) => ({
+        userId: state.userId,
         sessionId: state.sessionId,
         taskId: state.taskId,
         taskTitle: state.taskTitle,
@@ -471,7 +691,27 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
         breakPlannedSeconds: state.breakPlannedSeconds,
         completedSheetOpen: state.completedSheetOpen,
         completedSummary: state.completedSummary,
+        pendingRows: state.pendingRows,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.pendingRows && state.pendingRows.length > 0) {
+          setTimeout(() => {
+            useFocusStore.getState().syncPending()
+          }, 0)
+        }
+      },
     }
   )
 )
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    backoffDelay = 1000
+    useFocusStore.getState().syncPending()
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      useFocusStore.getState().syncPending()
+    }
+  })
+}

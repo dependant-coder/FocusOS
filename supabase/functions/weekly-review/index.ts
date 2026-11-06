@@ -124,6 +124,26 @@ Deno.serve(async (req: any) => {
 
       if (carryError) throw carryError
 
+      // 5. Focus minutes: completed/stopped focus-kind sessions that STARTED inside the user-local week
+      let focusSeconds = 0
+      const FOCUS_PAGE = 1000
+      for (let from = 0; ; from += FOCUS_PAGE) {
+        const { data: focusRows, error: focusError } = await supabase
+          .from('focus_sessions')
+          .select('actual_seconds')
+          .eq('user_id', uid)
+          .eq('kind', 'focus')
+          .in('status', ['completed', 'stopped'])
+          .gte('started_at', weekStartUtcIso)
+          .lt('started_at', nextWeekStartUtcIso)
+          .order('id', { ascending: true })
+          .range(from, from + FOCUS_PAGE - 1)
+        if (focusError) throw focusError
+        for (const row of focusRows ?? []) focusSeconds += row.actual_seconds ?? 0
+        if (!focusRows || focusRows.length < FOCUS_PAGE) break
+      }
+      const focusMinutes = Math.round(focusSeconds / 60)
+
       const tasksCompleted = completedCount ?? 0
       const tasksMissed = missedCount ?? 0
       const totalTasks = tasksCompleted + tasksMissed
@@ -144,7 +164,7 @@ Deno.serve(async (req: any) => {
           habits_done: habitsDone,
           habit_completion_rate: habitCompletionRate,
           carried_over_count: carriedCount ?? 0,
-          focus_minutes: 0,
+          focus_minutes: focusMinutes,
         },
         { onConflict: 'user_id,week_start' }
       )

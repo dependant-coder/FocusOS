@@ -813,23 +813,53 @@ export function createMockSupabaseClient() {
       const current: Record<string, unknown>[] = getStorage(this.table, [])
       const conflictCols = options?.onConflict ? options.onConflict.split(',').map(s => s.trim()) : ['id']
 
+      if (this.table === 'focus_sessions') {
+        const status = record.status ?? 'running'
+        if (status === 'running' || status === 'paused') {
+          const hasExisting = current.some(
+            s => s.user_id === record.user_id && s.id !== record.id && (s.status === 'running' || s.status === 'paused')
+          )
+          if (hasExisting) {
+            const err = { code: '23505', message: 'duplicate key value violates unique constraint "focus_sessions_one_active_per_user"' }
+            return {
+              select: () => ({
+                single: async () => ({ data: null, error: err }),
+                maybeSingle: async () => ({ data: null, error: err }),
+                then: (res: (val: unknown) => unknown) => Promise.resolve({ data: null, error: err }).then(res),
+              }),
+              then: (res: (val: unknown) => unknown) => Promise.resolve({ data: null, error: err }).then(res),
+            }
+          }
+        }
+      }
+
       const idx = current.findIndex(row =>
         conflictCols.every(col => row[col] === record[col])
       )
 
+      let resultRow: Record<string, unknown>
       if (idx >= 0) {
         current[idx] = { ...current[idx], ...record }
+        resultRow = current[idx]
       } else {
-        current.push({
+        resultRow = {
           id: record.id || `up-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           created_at: new Date().toISOString(),
           ...record,
-        })
+        }
+        current.push(resultRow)
       }
 
       setStorage(this.table, current)
       notifyChannels(this.table)
-      return Promise.resolve({ error: null })
+      return {
+        select: () => ({
+          single: async () => ({ data: resultRow, error: null }),
+          maybeSingle: async () => ({ data: resultRow, error: null }),
+          then: (res: (val: unknown) => unknown) => Promise.resolve({ data: [resultRow], error: null }).then(res),
+        }),
+        then: (res: (val: unknown) => unknown) => Promise.resolve({ data: [resultRow], error: null }).then(res),
+      }
     }
   }
 

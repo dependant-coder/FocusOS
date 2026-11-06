@@ -88,6 +88,7 @@ export default function App() {
   useEffect(() => {
     // Check if a running focus session completed while the app was closed
     useFocusStore.getState().checkSessionFinishedWhileClosed()
+    useFocusStore.getState().syncPending()
   }, [])
 
   if (loading) {
