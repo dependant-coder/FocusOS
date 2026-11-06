@@ -93,6 +93,13 @@ vi.mock('../hooks/useAnalytics', async (importOriginal) => {
       data: [{ week: 'Apr 7', rate: 75 }, { week: 'Apr 14', rate: 80 }],
       isLoading: false,
     }),
+    useFocusTrend: () => ({
+      data: [
+        { fullDate: '2026-04-14', date: 'Apr 14', minutes: 50 },
+        { fullDate: '2026-04-15', date: 'Apr 15', minutes: 75 },
+      ],
+      isLoading: false,
+    }),
     useHabitHeatmap: () => ({
       data: [
         {

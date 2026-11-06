@@ -200,12 +200,14 @@ describe('Phase 3 Batch 4: Vault (/vault Tasks) P3-5', () => {
     const mockToggleComplete = vi.fn()
 
     render(
-      <TaskCard
-        task={task}
-        onPin={mockPin}
-        onTap={mockTap}
-        onToggleComplete={mockToggleComplete}
-      />
+      <MemoryRouter>
+        <TaskCard
+          task={task}
+          onPin={mockPin}
+          onTap={mockTap}
+          onToggleComplete={mockToggleComplete}
+        />
+      </MemoryRouter>
     )
 
     // Check title & description
@@ -257,11 +259,13 @@ describe('Phase 3 Batch 4: Vault (/vault Tasks) P3-5', () => {
     }
 
     render(
-      <TaskCard
-        task={task}
-        onPin={vi.fn()}
-        onTap={vi.fn()}
-      />
+      <MemoryRouter>
+        <TaskCard
+          task={task}
+          onPin={vi.fn()}
+          onTap={vi.fn()}
+        />
+      </MemoryRouter>
     )
 
     expect(screen.getByText('Overdue')).toBeDefined()

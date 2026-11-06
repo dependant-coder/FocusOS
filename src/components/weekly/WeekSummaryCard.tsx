@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import type { WeeklyReviewWithLive } from '../../hooks/useWeekly'
 import { parseLocalDate, endOfWeekLocal, formatShortDate, format } from '../../lib/dates'
-import { CheckCircle2, XCircle, Flame, ArrowRightLeft, Calendar } from 'lucide-react'
+import { CheckCircle2, XCircle, Flame, ArrowRightLeft, Calendar, Timer } from 'lucide-react'
 
 export function WeekSummaryCard({ review }: { review: WeeklyReviewWithLive }) {
   const rate = review.completion_rate || 0
@@ -48,7 +48,7 @@ export function WeekSummaryCard({ review }: { review: WeeklyReviewWithLive }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
         {/* Completed */}
         <div className="bg-gray-50/80 dark:bg-gray-800/40 rounded-xl p-3 border border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-1.5 mb-1 text-emerald-600 dark:text-emerald-400">
@@ -91,8 +91,22 @@ export function WeekSummaryCard({ review }: { review: WeeklyReviewWithLive }) {
           </p>
         </div>
 
-        {/* Carried Over */}
+        {/* Focus Time */}
         <div className="bg-gray-50/80 dark:bg-gray-800/40 rounded-xl p-3 border border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-1.5 mb-1 text-purple-600 dark:text-purple-400">
+            <Timer size={14} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Focus Time
+            </span>
+          </div>
+          <p className="text-xl font-bold text-gray-900 dark:text-white tabular-nums">
+            {review.focus_minutes ?? 0}
+            <span className="text-xs font-normal text-gray-400 ml-1">min</span>
+          </p>
+        </div>
+
+        {/* Carried Over */}
+        <div className="bg-gray-50/80 dark:bg-gray-800/40 rounded-xl p-3 border border-gray-100 dark:border-gray-800 col-span-2 sm:col-span-1">
           <div className="flex items-center gap-1.5 mb-1 text-indigo-500">
             <ArrowRightLeft size={14} />
             <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">

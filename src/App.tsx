@@ -20,7 +20,10 @@ const Habits = lazy(() => import('./pages/Habits'))
 const Weekly = lazy(() => import('./pages/Weekly'))
 const Analytics = lazy(() => import('./pages/Analytics').then((m) => ({ default: m.Analytics })))
 const Settings = lazy(() => import('./pages/Settings'))
+const Focus = lazy(() => import('./pages/Focus'))
+const FocusRun = lazy(() => import('./pages/FocusRun'))
 const NotFound = lazy(() => import('./pages/NotFound'))
+import { useFocusStore } from './store/focusStore'
 
 function LoadingScreen() {
   return (
@@ -82,6 +85,11 @@ export default function App() {
     }
   }, [reduceMotionPref])
 
+  useEffect(() => {
+    // Check if a running focus session completed while the app was closed
+    useFocusStore.getState().checkSessionFinishedWhileClosed()
+  }, [])
+
   if (loading) {
     return <LoadingScreen />
   }
@@ -101,6 +109,16 @@ export default function App() {
               element={!user ? <AuthPage /> : <Navigate to="/" replace />}
             />
 
+            {/* Standalone full-screen Focus Run (no bottom nav / capture button) */}
+            <Route
+              path="/focus/run"
+              element={
+                <RequireAuth>
+                  <FocusRun />
+                </RequireAuth>
+              }
+            />
+
             {/* Protected App Routes with Persistent Layout */}
             <Route
               element={
@@ -113,6 +131,7 @@ export default function App() {
               <Route path="/daily" element={<PageTransition><Daily /></PageTransition>} />
               <Route path="/vault" element={<PageTransition><Vault /></PageTransition>} />
               <Route path="/habits" element={<PageTransition><Habits /></PageTransition>} />
+              <Route path="/focus" element={<PageTransition><Focus /></PageTransition>} />
               <Route path="/weekly" element={<PageTransition><Weekly /></PageTransition>} />
               <Route path="/analytics" element={<PageTransition><Analytics /></PageTransition>} />
               <Route path="/settings" element={<PageTransition><Settings /></PageTransition>} />

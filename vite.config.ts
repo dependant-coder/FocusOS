@@ -81,6 +81,12 @@ export default defineConfig({
             url: '/daily',
             icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
           },
+          {
+            name: 'Start Focus',
+            short_name: 'Focus',
+            url: '/focus',
+            icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+          },
         ],
         share_target: {
           action: '/?share=1',

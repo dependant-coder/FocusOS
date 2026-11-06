@@ -529,6 +529,39 @@ export default function Settings() {
           </div>
         </motion.div>
 
+        {/* Focus Sessions Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className={sectionClass}
+        >
+          <div className="px-5 py-3 bg-gray-50 dark:bg-gray-800/50 flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              Focus Sessions
+            </h2>
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 dark:bg-purple-950/50 dark:text-purple-400">
+              Active
+            </span>
+          </div>
+
+          <div className={dividerClass} />
+
+          <div className="p-4 sm:p-5 space-y-3">
+            <div className="flex items-start gap-3 p-3.5 rounded-xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/60 dark:border-purple-800/50 text-purple-950 dark:text-purple-200 text-xs leading-relaxed">
+              <Info className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-purple-900 dark:text-purple-200 mb-0.5">
+                  Interruption Tracking &amp; Limitation
+                </p>
+                <p className="text-purple-800/90 dark:text-purple-300">
+                  Web apps cannot restrict OS-level app switching. FocusOS keeps your screen awake using the Screen Wake Lock API and detects when you leave the active tab for more than 10 seconds as an interruption.
+                </p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
         {/* Notifications Section */}
         <motion.div
           initial={{ opacity: 0, y: 15 }}

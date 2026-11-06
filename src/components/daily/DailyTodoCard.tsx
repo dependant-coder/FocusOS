@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
+import { useSafeNavigate } from '../../lib/safeNavigate'
 import { CheckboxRing } from '../ui/CheckboxRing'
 import { SwipeableItem } from './SwipeableItem'
 import type { DailyTodoWithTask, Priority, Category } from '../../types'
@@ -17,6 +18,7 @@ import {
   Clock,
   Timer,
   Edit2,
+  Play,
 } from 'lucide-react'
 
 interface DailyTodoCardProps {
@@ -36,6 +38,7 @@ export default function DailyTodoCard({
   onMoveTomorrow,
   onToggleMustDo,
 }: DailyTodoCardProps) {
+  const navigate = useSafeNavigate()
   const [expanded, setExpanded] = useState(false)
   const [showMenu, setShowMenu] = useState(false)
 
@@ -123,8 +126,20 @@ export default function DailyTodoCard({
                 </motion.p>
               </div>
 
-              {/* Action Buttons: Expand details and 3-dot overflow menu */}
+              {/* Action Buttons: Expand details, Focus play, and 3-dot overflow menu */}
               <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                {!isHabit && !todo.done && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/focus', { state: { taskId: todo.task_id } })}
+                    aria-label={`Start focus session for "${todo.title}"`}
+                    title="Start Focus"
+                    className="p-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  >
+                    <Play size={13} className="fill-current" />
+                  </button>
+                )}
+
                 {hasDetails && (
                   <button
                     type="button"
@@ -154,6 +169,20 @@ export default function DailyTodoCard({
                         onClick={() => setShowMenu(false)}
                       />
                       <div className="absolute right-0 top-full mt-1 z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl overflow-hidden min-w-[170px] py-1 text-xs">
+                        {!isHabit && !todo.done && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowMenu(false)
+                              navigate('/focus', { state: { taskId: todo.task_id } })
+                            }}
+                            className="flex items-center gap-2.5 w-full px-3.5 py-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors font-medium"
+                          >
+                            <Play size={13} className="fill-current" />
+                            <span>Start Focus session</span>
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => {

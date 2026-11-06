@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom'
-import { Home, CalendarCheck, Archive, Leaf, BarChart3 } from 'lucide-react'
+import { Home, CalendarCheck, Timer, Archive, Leaf, BarChart3 } from 'lucide-react'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/daily', label: 'Daily', icon: CalendarCheck },
+  { to: '/focus', label: 'Focus', icon: Timer },
   { to: '/vault', label: 'Tasks', icon: Archive },
   { to: '/habits', label: 'Habits', icon: Leaf },
   { to: '/weekly', label: 'Review', icon: BarChart3 },

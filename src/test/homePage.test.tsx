@@ -40,6 +40,15 @@ vi.mock('../hooks/useHabits', () => ({
 }))
 
 vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    setQueriesData: vi.fn(),
+    invalidateQueries: vi.fn(),
+  }),
+  useMutation: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
     if (queryKey[0] === 'profile') {
       return { data: { name: 'Alex Johnson' } }

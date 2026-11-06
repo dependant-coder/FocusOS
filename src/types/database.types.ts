@@ -349,6 +349,62 @@ export type Database = {
         }
         Relationships: []
       }
+      focus_sessions: {
+        Row: {
+          actual_seconds: number | null
+          ended_at: string | null
+          id: string
+          interruptions: number
+          kind: 'focus' | 'break'
+          note: string | null
+          paused_at: string | null
+          paused_seconds: number
+          planned_seconds: number
+          started_at: string
+          status: 'running' | 'paused' | 'completed' | 'stopped'
+          task_id: string | null
+          user_id: string
+        }
+        Insert: {
+          actual_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          interruptions?: number
+          kind?: 'focus' | 'break'
+          note?: string | null
+          paused_at?: string | null
+          paused_seconds?: number
+          planned_seconds: number
+          started_at?: string
+          status?: 'running' | 'paused' | 'completed' | 'stopped'
+          task_id?: string | null
+          user_id?: string
+        }
+        Update: {
+          actual_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          interruptions?: number
+          kind?: 'focus' | 'break'
+          note?: string | null
+          paused_at?: string | null
+          paused_seconds?: number
+          planned_seconds?: number
+          started_at?: string
+          status?: 'running' | 'paused' | 'completed' | 'stopped'
+          task_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "focus_sessions_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

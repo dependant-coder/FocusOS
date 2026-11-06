@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Trophy, Flame, CheckCircle2, Lightbulb, Sparkles, AlertCircle } from 'lucide-react'
+import { Trophy, Flame, CheckCircle2, Lightbulb, Sparkles, AlertCircle, Timer } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -22,6 +22,7 @@ import {
   useCategoryDistribution,
   useWeeklyCompletionTrend,
   useAnalyticsSummary,
+  useFocusTrend,
   type AnalyticsRange,
 } from '../hooks/useAnalytics'
 import PageShell from '../components/layout/PageShell'
@@ -40,8 +41,10 @@ export function Analytics() {
   const { data: barData, isLoading: isBarLoading } = useTaskCompletionTrend(rangeDays)
   const { data: donutData, isLoading: isDonutLoading } = useCategoryDistribution(rangeDays)
   const { data: lineData, isLoading: isLineLoading } = useWeeklyCompletionTrend()
+  const { data: focusData, isLoading: isFocusLoading } = useFocusTrend(rangeDays)
 
   const totalCompletedInRange = summary?.tasksInRange ?? 0
+  const totalFocusMinutes = summary?.focusMinutesInRange ?? 0
   const totalCategoryTasks = donutData?.reduce((acc, curr) => acc + curr.value, 0) ?? 0
 
   return (
@@ -100,12 +103,18 @@ export function Analytics() {
         )}
 
         {/* Stat Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           <StatCard
             title={`Completed (${rangeDays}d)`}
             value={totalCompletedInRange}
             icon={CheckCircle2}
             color="primary"
+          />
+          <StatCard
+            title={`Focus Time (${rangeDays}d)`}
+            value={`${totalFocusMinutes}m`}
+            icon={Timer}
+            color="purple"
           />
           <StatCard
             title="All-Time Done"
@@ -333,8 +342,64 @@ export function Analytics() {
             )}
           </div>
 
+          {/* Chart: Focus Time Per Day (Bar Chart based on focus_sessions) */}
+          <div
+            className="bg-white dark:bg-gray-900 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-800 shadow-2xs"
+            aria-label={`Daily focus minutes for the last ${rangeDays} days`}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+                  Focus Time ({rangeDays} Days)
+                </h3>
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                  Logged from completed and tracked focus sessions
+                </p>
+              </div>
+              <span className="text-xs font-semibold text-purple-600 dark:text-purple-400 tabular-nums">
+                {totalFocusMinutes}m total
+              </span>
+            </div>
+
+            {isFocusLoading ? (
+              <div className="h-[260px] bg-gray-100 dark:bg-gray-800/40 rounded-xl animate-pulse" />
+            ) : totalFocusMinutes === 0 ? (
+              <div className="h-[260px] flex flex-col items-center justify-center text-center p-6 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
+                <AlertCircle size={24} className="text-gray-400 mb-2" />
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  No focus sessions recorded in this period
+                </p>
+                <p className="text-xs text-gray-400 mt-1 max-w-[220px]">
+                  Start a timer on the Focus page or from a task to track your deep work.
+                </p>
+              </div>
+            ) : (
+              <div className="h-[260px]">
+                <ResponsiveContainer width="100%" height={260} minWidth={0}>
+                  <BarChart data={focusData || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#88888825" vertical={false} />
+                    <XAxis dataKey="date" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} unit="m" allowDecimals={false} />
+                    <Tooltip
+                      cursor={{ fill: '#88888815' }}
+                      contentStyle={{
+                        backgroundColor: '#1f2937',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                      }}
+                      formatter={(val) => [`${val ?? 0} min`, 'Focus Time']}
+                    />
+                    <Bar dataKey="minutes" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
           {/* Chart 4: Frequency-Aware Habit Heatmap */}
-          <div>
+          <div className="lg:col-span-2">
             <HabitHeatmap rangeDays={rangeDays} />
           </div>
         </div>

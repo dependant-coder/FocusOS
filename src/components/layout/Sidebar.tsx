@@ -8,11 +8,13 @@ import {
   TrendingUp,
   Settings,
   Crosshair,
+  Timer,
 } from 'lucide-react'
 
 const SIDEBAR_ITEMS = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/daily', label: 'Daily Focus', icon: CalendarCheck },
+  { to: '/focus', label: 'Focus Timer', icon: Timer },
   { to: '/vault', label: 'Task Vault', icon: Archive },
   { to: '/habits', label: 'Habits', icon: Leaf },
   { to: '/weekly', label: 'Weekly Review', icon: BarChart3 },

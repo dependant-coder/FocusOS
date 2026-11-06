@@ -12,6 +12,11 @@ export type HabitInsert = Database['public']['Tables']['habits']['Insert']
 export type HabitLog = Database['public']['Tables']['habit_logs']['Row']
 export type WeeklyReview = Database['public']['Tables']['weekly_reviews']['Row']
 export type WeeklyReviewUpdate = Database['public']['Tables']['weekly_reviews']['Update']
+export type FocusSession = Database['public']['Tables']['focus_sessions']['Row']
+export type FocusSessionInsert = Database['public']['Tables']['focus_sessions']['Insert']
+export type FocusSessionUpdate = Database['public']['Tables']['focus_sessions']['Update']
+export type FocusKind = 'focus' | 'break'
+export type FocusStatus = 'running' | 'paused' | 'completed' | 'stopped'
 
 // Enum types
 export type Priority = 'critical' | 'high' | 'medium' | 'low'

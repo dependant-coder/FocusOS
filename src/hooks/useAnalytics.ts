@@ -363,13 +363,97 @@ export function useAnalyticsSummary(rangeDays: AnalyticsRange = 30) {
 
       const habitConsistencyRate = totalDue > 0 ? Math.round((totalDone / totalDue) * 100) : 0
 
+      // 3. Focus minutes in range
+      let focusMinutesInRange = 0
+      try {
+        const { data: focusRows } = await supabase
+          .from('focus_sessions')
+          .select('actual_seconds')
+          .eq('user_id', user.id)
+          .eq('kind', 'focus')
+          .in('status', ['completed', 'stopped'])
+          .gte('started_at', rangeStartIso)
+
+        if (focusRows) {
+          const totalSec = focusRows.reduce((acc, row) => acc + (row.actual_seconds || 0), 0)
+          focusMinutesInRange = Math.round(totalSec / 60)
+        }
+      } catch {
+        // Fallback gracefully if focus_sessions query fails
+      }
+
       return {
         tasksInRange,
         allTimeCompleted: allTimeCount ?? 0,
         bestWeekday: maxDayCount > 0 ? bestWeekday : null,
         longestStreak,
         habitConsistencyRate,
+        focusMinutesInRange,
       }
+    },
+  })
+}
+
+/** Fetch focus minutes per day based on focus_sessions.started_at */
+export function useFocusTrend(rangeDays: AnalyticsRange = 30) {
+  const { user } = useAuth()
+
+  return useQuery({
+    queryKey: ['analytics', 'focusTrend', user?.id, rangeDays],
+    enabled: !!user,
+    queryFn: async () => {
+      if (!user) return []
+
+      const today = todayLocal()
+      const startDate = addDaysLocal(today, -(rangeDays - 1))
+      const rangeStartIso = new Date(`${startDate}T00:00:00`).toISOString()
+
+      const rows: { actual_seconds: number | null; started_at: string }[] = []
+      let from = 0
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('focus_sessions')
+          .select('actual_seconds, started_at')
+          .eq('user_id', user.id)
+          .eq('kind', 'focus')
+          .in('status', ['completed', 'stopped'])
+          .gte('started_at', rangeStartIso)
+          .order('id', { ascending: true })
+          .range(from, from + PAGE_SIZE - 1)
+
+        if (error) throw error
+        if (!data || data.length === 0) break
+
+        rows.push(...data)
+        if (data.length < PAGE_SIZE) break
+        from += PAGE_SIZE
+      }
+
+      // Generate all local days in the range
+      const daySeconds: Record<string, number> = {}
+      let cur = startDate
+      while (cur <= today) {
+        daySeconds[cur] = 0
+        cur = addDaysLocal(cur, 1)
+      }
+
+      rows.forEach((s) => {
+        if (!s.started_at) return
+        const localDate = format(new Date(s.started_at), 'yyyy-MM-dd')
+        if (daySeconds[localDate] !== undefined) {
+          daySeconds[localDate] += s.actual_seconds || 0
+        }
+      })
+
+      return Object.entries(daySeconds).map(([dateStr, sec]) => {
+        const d = parseLocalDate(dateStr)
+        return {
+          fullDate: dateStr,
+          date: rangeDays === 7 ? format(d, 'EEE') : format(d, 'MMM d'),
+          minutes: Math.round(sec / 60),
+        }
+      })
     },
   })
 }

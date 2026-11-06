@@ -13,6 +13,7 @@ import {
   Check,
   ChevronRight,
   Plus,
+  Timer,
 } from 'lucide-react'
 import PageShell from '../components/layout/PageShell'
 import ProgressRing from '../components/daily/ProgressRing'
@@ -21,6 +22,9 @@ import { useAuth } from '../hooks/useAuth'
 import { useDailyTodos, useToggleDailyTodo } from '../hooks/useDailyTodos'
 import { useTasks } from '../hooks/useTasks'
 import { useHabits, useHabitLogs, useToggleHabitLog } from '../hooks/useHabits'
+import { useFocusTodayStats } from '../hooks/useFocus'
+import { useFocusStore } from '../store/focusStore'
+import { RemoteSessionBanner } from '../components/focus/RemoteSessionBanner'
 import { isHabitDue } from '../lib/habits'
 import { DAILY_QUOTES, PRIORITY_ORDER, type Priority, PRIORITY_CONFIG } from '../lib/constants'
 import { safeStorage } from '../lib/safeStorage'
@@ -119,6 +123,16 @@ export default function Home() {
 
   const habitsDueCount = dueHabits.length
 
+  // Focus sessions
+  const { data: focusTodayStats } = useFocusTodayStats()
+  const activeFocusSessionId = useFocusStore((s) => s.sessionId)
+  const activeFocusStatus = useFocusStore((s) => s.status)
+  const activeFocusTaskTitle = useFocusStore((s) => s.taskTitle)
+  const getFormattedRemaining = useFocusStore((s) => s.getFormattedRemaining)
+  const isFocusActive =
+    Boolean(activeFocusSessionId) &&
+    (activeFocusStatus === 'running' || activeFocusStatus === 'paused')
+
   // Next up: top 3 incomplete items from Today (priority-sorted, excluding habits)
   const nextUpItems = useMemo(() => {
     const incomplete = todos.filter((t) => !t.done && t.type !== 'habit')
@@ -163,6 +177,9 @@ export default function Home() {
   return (
     <PageShell title="Home">
       <div className="pb-24 pt-4 px-1 sm:px-4 max-w-lg mx-auto space-y-6">
+        {/* Remote cross-device active session banner */}
+        <RemoteSessionBanner />
+
         {/* 1. Header: Greeting & Date */}
         <div className="flex items-start justify-between">
           <div className="space-y-1">
@@ -203,37 +220,72 @@ export default function Home() {
           </div>
         )}
 
-        {/* 2. Primary Action Card (P4-1 Focus hidden until shipped) */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-5 text-white shadow-lg shadow-indigo-500/15">
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-indigo-100 backdrop-blur-xs">
-                Today&apos;s Command Center
-              </span>
-              <h2 className="text-lg font-bold text-white tracking-tight">
-                {totalTodosCount === 0
-                  ? 'Plan Your Day'
-                  : completedTodosCount === totalTodosCount
-                    ? 'All Caught Up!'
-                    : 'Execute Today&apos;s Plan'}
-              </h2>
-              <p className="text-xs text-indigo-150 text-indigo-100/90 max-w-xs">
-                {totalTodosCount === 0
-                  ? 'Start by planning your tasks and must-dos for today.'
-                  : completedTodosCount === totalTodosCount
-                    ? 'You have completed everything on your schedule today.'
-                    : `${totalTodosCount - completedTodosCount} daily item${totalTodosCount - completedTodosCount === 1 ? '' : 's'} remaining to tackle.`}
-              </p>
+        {/* 2. Primary Action Card (with Focus Session resume or Plan Day / Start Focus) */}
+        {isFocusActive ? (
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-700 via-purple-700 to-indigo-900 p-5 text-white shadow-lg shadow-indigo-500/20 border border-indigo-400/30">
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/20 text-indigo-100 backdrop-blur-xs animate-pulse">
+                  <Timer size={12} />
+                  Focus Session ({activeFocusStatus})
+                </span>
+                <h2 className="text-xl font-mono font-bold text-white tracking-tight">
+                  {getFormattedRemaining()} remaining
+                </h2>
+                <p className="text-xs text-indigo-100/90 max-w-xs truncate">
+                  {activeFocusTaskTitle ? `Working on: ${activeFocusTaskTitle}` : 'Deep work session in progress'}
+                </p>
+              </div>
+              <Link
+                to="/focus/run"
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm shadow-sm hover:bg-indigo-50 active:scale-[0.98] transition-all shrink-0"
+              >
+                <span>Resume Focus</span>
+                <ArrowRight size={16} />
+              </Link>
             </div>
-            <Link
-              to="/daily"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm shadow-sm hover:bg-indigo-50 active:scale-[0.98] transition-all shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              <span>{totalTodosCount === 0 ? 'Plan my day' : 'Go to Today'}</span>
-              <ArrowRight size={16} />
-            </Link>
           </div>
-        </div>
+        ) : (
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-5 text-white shadow-lg shadow-indigo-500/15">
+            <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-indigo-100 backdrop-blur-xs">
+                  Today&apos;s Command Center
+                </span>
+                <h2 className="text-lg font-bold text-white tracking-tight">
+                  {totalTodosCount === 0
+                    ? 'Plan Your Day'
+                    : completedTodosCount === totalTodosCount
+                      ? 'All Caught Up!'
+                      : 'Execute Today&apos;s Plan'}
+                </h2>
+                <p className="text-xs text-indigo-150 text-indigo-100/90 max-w-xs">
+                  {totalTodosCount === 0
+                    ? 'Start by planning your tasks and must-dos for today.'
+                    : completedTodosCount === totalTodosCount
+                      ? 'You have completed everything on your schedule today.'
+                      : `${totalTodosCount - completedTodosCount} daily item${totalTodosCount - completedTodosCount === 1 ? '' : 's'} remaining to tackle.`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/focus"
+                  className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/15 hover:bg-white/20 text-white font-medium text-xs backdrop-blur-xs transition-colors shrink-0"
+                >
+                  <Timer size={14} />
+                  <span>Start Focus</span>
+                </Link>
+                <Link
+                  to="/daily"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-indigo-700 font-semibold text-sm shadow-sm hover:bg-indigo-50 active:scale-[0.98] transition-all shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <span>{totalTodosCount === 0 ? 'Plan my day' : 'Go to Today'}</span>
+                  <ArrowRight size={16} />
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4. Progress Ring & Chips */}
         <div className="space-y-3">
@@ -266,8 +318,8 @@ export default function Home() {
             </div>
           </Link>
 
-          {/* 3 Clickable Chips */}
-          <div className="grid grid-cols-3 gap-2.5">
+          {/* 4 Clickable Chips */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {/* Today Chip */}
             <Link
               to="/daily"
@@ -281,6 +333,23 @@ export default function Home() {
                 {completedTodosCount}
                 <span className="text-xs text-blue-500 dark:text-blue-400 font-normal">
                   /{totalTodosCount}
+                </span>
+              </div>
+            </Link>
+
+            {/* Focus Chip */}
+            <Link
+              to="/focus"
+              className="p-3 rounded-xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-100 dark:border-purple-900/40 hover:bg-purple-100/70 dark:hover:bg-purple-900/50 transition-colors flex flex-col justify-between"
+            >
+              <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 text-xs font-semibold">
+                <Timer size={14} />
+                <span>Focus</span>
+              </div>
+              <div className="mt-2 text-xl font-bold text-purple-800 dark:text-purple-200">
+                {focusTodayStats?.totalMinutes ?? 0}
+                <span className="text-xs text-purple-500 dark:text-purple-400 font-normal">
+                  m
                 </span>
               </div>
             </Link>

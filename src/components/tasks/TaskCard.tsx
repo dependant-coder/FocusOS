@@ -1,10 +1,11 @@
+import { useSafeNavigate } from '../../lib/safeNavigate'
 import type { Task, Priority, Category, TaskStatus } from '../../types'
 import PriorityBadge from './PriorityBadge'
 import CategoryBadge from './CategoryBadge'
 import StatusBadge from './StatusBadge'
 import DateChip from './DateChip'
 import { OverdueBadge } from './OverdueBadge'
-import { Check, Pin, Plus, Clock, BrainCircuit, Zap } from 'lucide-react'
+import { Check, Pin, Plus, Clock, BrainCircuit, Zap, Play } from 'lucide-react'
 
 interface TaskCardProps {
   task: Task
@@ -35,6 +36,7 @@ export default function TaskCard({
   isSelected,
   onToggleSelect,
 }: TaskCardProps) {
+  const navigate = useSafeNavigate()
   const priority = task.priority as Priority
   const isDone = task.status === 'done'
   const estimateText = formatEstimate(task.estimate_min)
@@ -131,9 +133,22 @@ export default function TaskCard({
             )}
           </div>
 
-          {/* "+ Today" / "On Today" chip button */}
+          {/* Actions: Focus & "+ Today" chip buttons */}
           {!isSelectionMode && (
-            <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+              {!isDone && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/focus', { state: { taskId: task.id } })}
+                  aria-label={`Start focus session for "${task.title}"`}
+                  title="Start Focus"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200/50 dark:border-indigo-800/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                >
+                  <Play size={10} className="fill-current" />
+                  <span>Focus</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => onPin(task.id, !task.pin_to_today)}

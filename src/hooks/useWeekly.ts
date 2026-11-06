@@ -10,6 +10,7 @@ import { randomUUID } from '../lib/uuid'
 export interface WeeklyReviewWithLive extends WeeklyReview {
   isLive?: boolean
   bestDay?: string | null
+  focus_session_count?: number
 }
 
 /** Fetch weekly review row, or compute live stats client-side if no row exists */
@@ -147,6 +148,28 @@ export function useWeekly(weekStart: string) {
       const habitsDone = habitsDoneCount ?? 0
       const habitCompletionRate = habitsDue > 0 ? Math.round((habitsDone / habitsDue) * 100) : 0
 
+      // 5. Focus minutes in week: sum of actual_seconds for kind='focus' and status in ('completed', 'stopped') started within [weekStartUtcIso, nextWeekStartUtcIso)
+      let liveFocusMinutes = 0
+      let liveFocusSessionCount = 0
+      try {
+        const { data: focusRows } = await supabase
+          .from('focus_sessions')
+          .select('actual_seconds')
+          .eq('user_id', user.id)
+          .eq('kind', 'focus')
+          .in('status', ['completed', 'stopped'])
+          .gte('started_at', weekStartUtcIso)
+          .lt('started_at', nextWeekStartUtcIso)
+
+        if (focusRows) {
+          liveFocusSessionCount = focusRows.length
+          const totalSec = focusRows.reduce((acc, row) => acc + (row.actual_seconds || 0), 0)
+          liveFocusMinutes = Math.round(totalSec / 60)
+        }
+      } catch {
+        // Fallback
+      }
+
       if (stored) {
         // Return merged live stats with stored reflection fields
         return {
@@ -158,7 +181,8 @@ export function useWeekly(weekStart: string) {
           habits_done: habitsDone,
           habit_completion_rate: habitCompletionRate,
           carried_over_count: carriedCount ?? 0,
-          focus_minutes: stored.focus_minutes ?? 0,
+          focus_minutes: stored.focus_minutes !== null && stored.focus_minutes !== undefined ? stored.focus_minutes : liveFocusMinutes,
+          focus_session_count: liveFocusSessionCount,
           wins: stored.wins,
           blockers: stored.blockers,
           next_priorities: stored.next_priorities,
@@ -178,7 +202,8 @@ export function useWeekly(weekStart: string) {
         habits_done: habitsDone,
         habit_completion_rate: habitCompletionRate,
         carried_over_count: carriedCount ?? 0,
-        focus_minutes: 0,
+        focus_minutes: liveFocusMinutes,
+        focus_session_count: liveFocusSessionCount,
         wins: null,
         blockers: null,
         next_priorities: null,

@@ -356,11 +356,45 @@ export function createMockSupabaseClient() {
       created_at: new Date(Date.now() - 30 * 86400000).toISOString(),
     }
 
+    const initialFocusSessions: Database['public']['Tables']['focus_sessions']['Row'][] = [
+      {
+        id: 'fs-demo-1',
+        user_id: DEMO_USER_ID,
+        task_id: 'task-1',
+        kind: 'focus',
+        planned_seconds: 1500,
+        actual_seconds: 1500,
+        started_at: new Date(Date.now() - 3600000 * 3).toISOString(),
+        ended_at: new Date(Date.now() - 3600000 * 3 + 1500000).toISOString(),
+        paused_at: null,
+        paused_seconds: 0,
+        status: 'completed',
+        interruptions: 0,
+        note: 'Completed problem set 3',
+      },
+      {
+        id: 'fs-demo-2',
+        user_id: DEMO_USER_ID,
+        task_id: 'task-2',
+        kind: 'focus',
+        planned_seconds: 2700,
+        actual_seconds: 2400,
+        started_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+        ended_at: new Date(Date.now() - 3600000 * 24 + 2400000).toISOString(),
+        paused_at: null,
+        paused_seconds: 0,
+        status: 'completed',
+        interruptions: 1,
+        note: 'Biology lab report draft',
+      },
+    ]
+
     setStorage('tasks', initialTasks)
     setStorage('habits', initialHabits)
     setStorage('habit_logs', generateInitialHabitLogs())
     setStorage('daily_todos', initialDailyTodos)
     setStorage('weekly_reviews', initialWeeklyReviews)
+    setStorage('focus_sessions', initialFocusSessions)
     setStorage('profiles', [initialProfile])
     setStorage('auth_user', defaultUser)
     setStorage('initialized', true)
@@ -482,6 +516,11 @@ export function createMockSupabaseClient() {
       return this
     }
 
+    in(col: string, values: unknown[]) {
+      this.filters.push(row => values.includes(row[col]))
+      return this
+    }
+
     gte(col: string, val: unknown) {
       this.filters.push(row => {
         const rowVal = row[col]
@@ -551,6 +590,24 @@ export function createMockSupabaseClient() {
         })
       }
 
+      if (this.table === 'focus_sessions' && this.selectCols.includes('tasks(')) {
+        const allTasks: Record<string, unknown>[] = getStorage('tasks', [])
+        const taskMap = new Map(allTasks.map(t => [String(t.id), t]))
+        rows = rows.map(r => {
+          const taskId = r.task_id ? String(r.task_id) : null
+          const matchedTask = taskId && taskMap.has(taskId) ? taskMap.get(taskId) : null
+          return {
+            ...r,
+            tasks: matchedTask
+              ? {
+                  id: matchedTask.id,
+                  title: matchedTask.title ?? '',
+                }
+              : null,
+          }
+        })
+      }
+
       if (this.isHeadOnly) {
         return { data: null, count: totalCount, error: null }
       }
@@ -598,6 +655,28 @@ export function createMockSupabaseClient() {
           created_at: item.created_at || new Date().toISOString(),
           ...item,
         }
+
+        // DB Unique Index: at most ONE running/paused session per user
+        if (this.table === 'focus_sessions') {
+          const status = newItem.status ?? 'running'
+          if (status === 'running' || status === 'paused') {
+            const hasExisting = current.some(
+              s => s.user_id === newItem.user_id && (s.status === 'running' || s.status === 'paused')
+            )
+            if (hasExisting) {
+              const err = { code: '23505', message: 'duplicate key value violates unique constraint "focus_sessions_one_active_per_user"' }
+              return {
+                select: () => ({
+                  single: async () => ({ data: null, error: err }),
+                  maybeSingle: async () => ({ data: null, error: err }),
+                  then: (res: (val: unknown) => unknown) => Promise.resolve({ data: null, error: err }).then(res),
+                }),
+                then: (res: (val: unknown) => unknown) => Promise.resolve({ data: null, error: err }).then(res),
+              }
+            }
+          }
+        }
+
         current.push(newItem)
         inserted.push(newItem)
 
