@@ -16,6 +16,8 @@ import {
 import { supabase } from '../lib/supabase'
 import type { FocusSession, FocusKind, FocusStatus } from '../types'
 
+export const FOCUS_STORE_PERSIST_KEY = 'focusos_active_focus_session'
+
 export interface FocusRowSnapshot {
   id: string
   user_id: string
@@ -30,9 +32,12 @@ export interface FocusRowSnapshot {
   status: FocusStatus
   interruptions: number
   note: string | null
+  rev?: number
+  attempts?: number
 }
 
 export interface PersistedFocusState {
+  ownerUserId: string | null
   userId: string | null
   sessionId: string | null
   taskId: string | null
@@ -60,7 +65,7 @@ export interface PersistedFocusState {
   pendingRows: FocusRowSnapshot[]
 }
 
-interface FocusStoreActions {
+export interface FocusStoreActions {
   startSession: (params: {
     userId?: string
     taskId?: string | null
@@ -83,10 +88,13 @@ interface FocusStoreActions {
   getFormattedRemaining: (nowMs?: number) => string
   checkSessionFinishedWhileClosed: () => boolean
   syncPending: () => Promise<void>
+  reset: () => void
 }
 
-// Outbox sync helpers
+// Outbox sync helpers & monotonic rev counter
 let syncInProgress = false
+let resyncRequested = false
+let revCounter = 0
 let backoffTimer: ReturnType<typeof setTimeout> | null = null
 let backoffDelay = 1000
 
@@ -100,21 +108,60 @@ function scheduleRetry() {
 }
 
 function updatePendingRow(snapshot: FocusRowSnapshot) {
+  revCounter += 1
   const current = useFocusStore.getState().pendingRows || []
   const idx = current.findIndex((r) => r.id === snapshot.id)
+  const existingAttempts = idx >= 0 ? current[idx].attempts ?? 0 : 0
+
+  const taggedSnapshot: FocusRowSnapshot = {
+    ...snapshot,
+    rev: revCounter,
+    attempts: snapshot.attempts ?? existingAttempts,
+  }
+
   let updated: FocusRowSnapshot[]
   if (idx >= 0) {
     updated = [...current]
-    updated[idx] = snapshot
+    updated[idx] = taggedSnapshot
   } else {
-    updated = [...current, snapshot]
+    updated = [...current, taggedSnapshot]
   }
   useFocusStore.setState({ pendingRows: updated })
+}
+
+function isPermanentError(error: { code?: string; status?: number; message?: string } | null | undefined): boolean {
+  if (!error) return false
+  const code = error.code ? String(error.code) : ''
+  const status = error.status ? Number(error.status) : 0
+  const msg = error.message || ''
+
+  // Transient network errors
+  if (msg.includes('fetch failed') || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+    return false
+  }
+  // 5xx server errors
+  if (status >= 500) return false
+  // Rate limit
+  if (status === 429) return false
+
+  // 23514 check constraint violation, 42501 RLS error, or 4xx client errors
+  if (
+    code === '23514' ||
+    code === '42501' ||
+    code.startsWith('4') ||
+    code.startsWith('23') ||
+    (status >= 400 && status < 500)
+  ) {
+    return true
+  }
+
+  return false
 }
 
 export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
   persist(
     (set, get) => ({
+      ownerUserId: null,
       userId: null,
       sessionId: null,
       taskId: null,
@@ -132,6 +179,34 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
       completedSheetOpen: false,
       completedSummary: null,
       pendingRows: [],
+
+      reset: () => {
+        if (backoffTimer) {
+          clearTimeout(backoffTimer)
+          backoffTimer = null
+        }
+        syncInProgress = false
+        resyncRequested = false
+        set({
+          ownerUserId: null,
+          userId: null,
+          sessionId: null,
+          taskId: null,
+          taskTitle: null,
+          kind: 'focus',
+          startedAtMs: 0,
+          plannedMs: 0,
+          pausedTotalMs: 0,
+          pausedAtMs: null,
+          status: 'stopped',
+          interruptions: 0,
+          note: null,
+          conflictSession: null,
+          completedSheetOpen: false,
+          completedSummary: null,
+          pendingRows: [],
+        })
+      },
 
       getRemainingMs: (nowMs = Date.now()) => {
         const state = get()
@@ -158,7 +233,6 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
         if (state.sessionId && state.status === 'running') {
           const remaining = get().getRemainingMs()
           if (remaining <= 0) {
-            // It finished while app was closed! completeSession will cap to planned time
             get().completeSession()
             return true
           }
@@ -167,59 +241,109 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
       },
 
       syncPending: async () => {
-        if (syncInProgress) return
-        const currentPending = get().pendingRows
-        if (!currentPending || currentPending.length === 0) return
+        if (syncInProgress) {
+          resyncRequested = true
+          return
+        }
+        const initialPending = get().pendingRows
+        if (!initialPending || initialPending.length === 0) return
 
         syncInProgress = true
         try {
-          const toProcess = [...get().pendingRows]
-          const succeededIds = new Set<string>()
-          let hadError = false
+          let keepGoing = true
+          while (keepGoing) {
+            resyncRequested = false
+            const currentPending = get().pendingRows
+            if (!currentPending || currentPending.length === 0) {
+              break
+            }
 
-          for (const snapshot of toProcess) {
-            const { error } = await supabase
-              .from('focus_sessions')
-              .upsert(snapshot, { onConflict: 'id' })
+            let progressMade = false
+            let hadTransientError = false
 
-            if (!error) {
-              succeededIds.add(snapshot.id)
-            } else {
-              hadError = true
-              const is23505 =
-                error.code === '23505' ||
-                error.message?.includes('23505') ||
-                error.message?.includes('focus_sessions_one_active_per_user')
+            for (const snapshot of [...currentPending]) {
+              // Ensure this exact snapshot version is still in pendingRows
+              const currentItem = get().pendingRows.find(
+                (r) => r.id === snapshot.id && r.rev === snapshot.rev
+              )
+              if (!currentItem) {
+                continue
+              }
 
-              // Only treat 23505 as active conflict for running/paused sessions
-              if (is23505 && (snapshot.status === 'running' || snapshot.status === 'paused')) {
-                const { data: conflict } = await supabase
-                  .from('focus_sessions')
-                  .select('*')
-                  .eq('user_id', snapshot.user_id)
-                  .in('status', ['running', 'paused'])
-                  .maybeSingle()
+              const { rev: _rev, attempts: _attempts, ...dbPayload } = snapshot
+              const { error } = await supabase
+                .from('focus_sessions')
+                .upsert(dbPayload as never, { onConflict: 'id' })
 
-                succeededIds.add(snapshot.id)
-                set({
-                  conflictSession: conflict,
-                  status: 'stopped',
-                  sessionId: null,
-                })
+              if (!error) {
+                progressMade = true
+                // Remove row ONLY if the current row still has the same rev as the one uploaded
+                set((prev) => ({
+                  pendingRows: prev.pendingRows.filter(
+                    (r) => !(r.id === snapshot.id && r.rev === snapshot.rev)
+                  ),
+                }))
+              } else {
+                const is23505 =
+                  error.code === '23505' ||
+                  error.message?.includes('23505') ||
+                  error.message?.includes('focus_sessions_one_active_per_user')
+
+                if (is23505 && (snapshot.status === 'running' || snapshot.status === 'paused')) {
+                  progressMade = true
+                  const { data: conflict } = await supabase
+                    .from('focus_sessions')
+                    .select('*')
+                    .eq('user_id', snapshot.user_id)
+                    .in('status', ['running', 'paused'])
+                    .maybeSingle()
+
+                  set((prev) => ({
+                    conflictSession: conflict,
+                    status: 'stopped',
+                    sessionId: null,
+                    pendingRows: prev.pendingRows.filter(
+                      (r) => !(r.id === snapshot.id && r.rev === snapshot.rev)
+                    ),
+                  }))
+                } else if (isPermanentError(error)) {
+                  const nextAttempts = (snapshot.attempts || 0) + 1
+                  if (nextAttempts >= 5) {
+                    progressMade = true
+                    console.error('Dropping poisoned focus_session snapshot after 5 failed attempts:', snapshot, error)
+                    toast.error('Some offline changes could not be saved')
+                    set((prev) => ({
+                      pendingRows: prev.pendingRows.filter((r) => r.id !== snapshot.id),
+                    }))
+                  } else {
+                    set((prev) => ({
+                      pendingRows: prev.pendingRows.map((r) =>
+                        r.id === snapshot.id && r.rev === snapshot.rev
+                          ? { ...r, attempts: nextAttempts }
+                          : r
+                      ),
+                    }))
+                  }
+                } else {
+                  hadTransientError = true
+                }
               }
             }
-          }
 
-          if (succeededIds.size > 0) {
-            set((prev) => ({
-              pendingRows: prev.pendingRows.filter((r) => !succeededIds.has(r.id)),
-            }))
-          }
+            if (hadTransientError) {
+              scheduleRetry()
+              break
+            } else {
+              backoffDelay = 1000
+            }
 
-          if (hadError) {
-            scheduleRetry()
-          } else {
-            backoffDelay = 1000
+            if (get().pendingRows.length === 0) {
+              break
+            }
+
+            if (!progressMade && !resyncRequested) {
+              keepGoing = false
+            }
           }
         } finally {
           syncInProgress = false
@@ -246,7 +370,7 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           }
         }
         if (effectiveUserId) {
-          set({ userId: effectiveUserId })
+          set({ userId: effectiveUserId, ownerUserId: effectiveUserId })
         }
 
         set({
@@ -626,6 +750,8 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
           null
 
         set({
+          ownerUserId: session.user_id,
+          userId: session.user_id,
           sessionId: session.id,
           taskId: session.task_id,
           taskTitle: title,
@@ -673,9 +799,10 @@ export const useFocusStore = create<PersistedFocusState & FocusStoreActions>()(
       },
     }),
     {
-      name: 'focusos_active_focus_session',
+      name: FOCUS_STORE_PERSIST_KEY,
       storage: createJSONStorage(() => safeStorage),
       partialize: (state) => ({
+        ownerUserId: state.ownerUserId,
         userId: state.userId,
         sessionId: state.sessionId,
         taskId: state.taskId,

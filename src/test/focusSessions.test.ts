@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import toast from 'react-hot-toast'
 import {
   calculateRemainingMs,
   calculateActualSeconds,
@@ -12,7 +13,8 @@ import {
   reconstructRemainingSecondsFromRow,
   type TimerState,
 } from '../lib/focusTimer'
-import { useFocusStore } from '../store/focusStore'
+import { useFocusStore, FOCUS_STORE_PERSIST_KEY } from '../store/focusStore'
+import { safeStorage } from '../lib/safeStorage'
 import { supabase } from '../lib/supabase'
 import { todayLocal, addDaysLocal } from '../lib/dates'
 import type { FocusSession } from '../types'
@@ -531,6 +533,150 @@ describe('Focus Sessions (P4-1)', () => {
       expect(useFocusStore.getState().pendingRows.length).toBe(1)
       expect(useFocusStore.getState().pendingRows[0].id).toBe(sessionId)
       expect(useFocusStore.getState().pendingRows[0].status).toBe('completed')
+
+      spy.mockRestore()
+    })
+
+    it('(e) poison snapshot with 23514 check constraint violation is dropped after 5 attempts and displays error toast', async () => {
+      const toastSpy = vi.spyOn(toast, 'error').mockImplementation(() => '' as never)
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const spy = vi.spyOn(supabase, 'from').mockImplementation(((table: SupabaseTable) => {
+        const builder = originalFrom(table)
+        if (table === 'focus_sessions') {
+          builder.upsert = (() =>
+            Promise.resolve({
+              data: null,
+              error: { code: '23514', message: 'new row for relation violates check constraint' },
+            })) as unknown as typeof builder.upsert
+        }
+        return builder
+      }) as never)
+
+      await useFocusStore.getState().startSession({
+        userId: 'poison-user',
+        plannedSeconds: 1500,
+      })
+
+      // After initial attempt, attempts = 1, row is still in pendingRows
+      expect(useFocusStore.getState().pendingRows.length).toBe(1)
+      expect(useFocusStore.getState().pendingRows[0].attempts).toBe(1)
+      expect(toastSpy).not.toHaveBeenCalled()
+
+      // Attempts 2, 3, 4
+      await useFocusStore.getState().syncPending()
+      expect(useFocusStore.getState().pendingRows[0]?.attempts).toBe(2)
+
+      await useFocusStore.getState().syncPending()
+      expect(useFocusStore.getState().pendingRows[0]?.attempts).toBe(3)
+
+      await useFocusStore.getState().syncPending()
+      expect(useFocusStore.getState().pendingRows[0]?.attempts).toBe(4)
+
+      // 5th attempt: should drop the row, log console.error, and show toast.error
+      await useFocusStore.getState().syncPending()
+      expect(useFocusStore.getState().pendingRows.length).toBe(0)
+      expect(consoleErrorSpy).toHaveBeenCalled()
+      expect(toastSpy).toHaveBeenCalledWith('Some offline changes could not be saved')
+
+      spy.mockRestore()
+      toastSpy.mockRestore()
+      consoleErrorSpy.mockRestore()
+    })
+
+    it('(f) sign-out clears the persisted key and in-memory state', () => {
+      useFocusStore.setState({
+        ownerUserId: 'user-signout-1',
+        userId: 'user-signout-1',
+        sessionId: 'session-signout-1',
+        status: 'running',
+        pendingRows: [
+          {
+            id: 'session-signout-1',
+            user_id: 'user-signout-1',
+            task_id: null,
+            kind: 'focus',
+            planned_seconds: 1500,
+            actual_seconds: null,
+            started_at: new Date().toISOString(),
+            ended_at: null,
+            paused_at: null,
+            paused_seconds: 0,
+            status: 'running',
+            interruptions: 0,
+            note: null,
+          },
+        ],
+      })
+
+      safeStorage.setItem(FOCUS_STORE_PERSIST_KEY, JSON.stringify({ state: { sessionId: 'session-signout-1' } }))
+      expect(safeStorage.getItem(FOCUS_STORE_PERSIST_KEY)).not.toBeNull()
+
+      // Reset action called on sign out
+      useFocusStore.getState().reset()
+      safeStorage.removeItem(FOCUS_STORE_PERSIST_KEY)
+
+      const state = useFocusStore.getState()
+      expect(state.sessionId).toBeNull()
+      expect(state.status).toBe('stopped')
+      expect(state.pendingRows).toEqual([])
+      expect(state.ownerUserId).toBeNull()
+      expect(safeStorage.getItem(FOCUS_STORE_PERSIST_KEY)).toBeNull()
+    })
+
+    it('(g) switching to a different user does not see or try to upload the previous user pending rows', async () => {
+      const uploadedPayloads: unknown[] = []
+      const spy = vi.spyOn(supabase, 'from').mockImplementation(((table: SupabaseTable) => {
+        const builder = originalFrom(table)
+        if (table === 'focus_sessions') {
+          builder.upsert = ((record: unknown) => {
+            uploadedPayloads.push(record)
+            return Promise.resolve({ data: null, error: null })
+          }) as unknown as typeof builder.upsert
+        }
+        return builder
+      }) as never)
+
+      // User 1 has pending rows
+      useFocusStore.setState({
+        ownerUserId: 'user-alpha',
+        userId: 'user-alpha',
+        sessionId: 'session-alpha',
+        status: 'running',
+        pendingRows: [
+          {
+            id: 'session-alpha',
+            user_id: 'user-alpha',
+            task_id: null,
+            kind: 'focus',
+            planned_seconds: 1500,
+            actual_seconds: null,
+            started_at: new Date().toISOString(),
+            ended_at: null,
+            paused_at: null,
+            paused_seconds: 0,
+            status: 'running',
+            interruptions: 0,
+            note: null,
+          },
+        ],
+      })
+
+      // New user beta logs in: AuthProvider detects ownerUserId ('user-alpha') !== currentUid ('user-beta')
+      const currentUid = 'user-beta'
+      const focusState = useFocusStore.getState()
+      if (focusState.ownerUserId && currentUid && focusState.ownerUserId !== currentUid) {
+        focusState.reset()
+      }
+      useFocusStore.setState({ ownerUserId: currentUid, userId: currentUid })
+
+      // Pending rows of user alpha were dropped by reset()
+      expect(useFocusStore.getState().pendingRows).toHaveLength(0)
+      expect(useFocusStore.getState().sessionId).toBeNull()
+
+      // Sync pending does not upload anything from user alpha
+      await useFocusStore.getState().syncPending()
+      expect(uploadedPayloads).toHaveLength(0)
 
       spy.mockRestore()
     })

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { AuthContext, type AuthSession, type AuthUser } from '../context/AuthContext'
 import { safeStorage } from '../lib/safeStorage'
+import { useFocusStore, FOCUS_STORE_PERSIST_KEY } from '../store/focusStore'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<AuthSession>(null)
@@ -18,6 +19,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)
+
+      const currentUid = session?.user?.id ?? null
+      const focusState = useFocusStore.getState()
+      if (focusState.ownerUserId && currentUid && focusState.ownerUserId !== currentUid) {
+        focusState.reset()
+      }
+      if (currentUid && focusState.ownerUserId !== currentUid) {
+        useFocusStore.setState({ ownerUserId: currentUid, userId: currentUid })
+      }
     })
 
     // 2. Single subscription for auth state changes
@@ -28,15 +38,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(newSession?.user ?? null)
       setLoading(false)
 
+      const currentUid = newSession?.user?.id ?? null
+      const focusState = useFocusStore.getState()
+
       if (event === 'PASSWORD_RECOVERY') {
         navigate('/auth/reset')
       } else if (event === 'SIGNED_IN' && newSession) {
+        if (focusState.ownerUserId && currentUid && focusState.ownerUserId !== currentUid) {
+          focusState.reset()
+        }
+        if (currentUid && focusState.ownerUserId !== currentUid) {
+          useFocusStore.setState({ ownerUserId: currentUid, userId: currentUid })
+        }
         if (window.location.pathname.startsWith('/auth') && window.location.pathname !== '/auth/reset') {
           navigate('/')
         }
       } else if (event === 'SIGNED_OUT') {
         queryClient.clear()
-        safeStorage.removeItem('focusos-focus-session')
+        useFocusStore.getState().reset()
+        safeStorage.removeItem(FOCUS_STORE_PERSIST_KEY)
         safeStorage.removeItem('FOCUSOS_OFFLINE_CACHE')
         navigate('/auth')
       }
